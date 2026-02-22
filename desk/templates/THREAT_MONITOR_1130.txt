@@ -1,0 +1,9 @@
+⚠️ THREAT MONITOR | 11:30
+
+{{HEADLINE}}
+
+{{INTEL_BLOCK}}
+
+{{RISK_BLOCK}}
+
+{{FOOTER}}

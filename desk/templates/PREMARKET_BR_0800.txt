@@ -1,0 +1,12 @@
+🇧🇷 PREMARKET BR | 08:00
+
+{{HEADLINE}}
+
+📊 Markets
+{{MARKETS_BLOCK}}
+
+{{INTEL_BLOCK}}
+
+{{FLOW_BLOCK}}
+
+{{FOOTER}}

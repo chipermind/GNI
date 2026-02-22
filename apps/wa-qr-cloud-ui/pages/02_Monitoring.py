@@ -153,10 +153,11 @@ if recent and len(recent) > 0:
     rows = []
     for r in recent[:20]:
         if not isinstance(r, dict):
-            rows.append({"id": str(r), "source_name": "—", "status": "—", "created_at": "—", "updated_at": "—"})
+            rows.append({"id": str(r), "source_type": "—", "source_name": "—", "status": "—", "created_at": "—", "updated_at": "—"})
             continue
         rows.append({
             "id": r.get("id", "—"),
+            "source_type": r.get("source_type") or "rss",
             "source_name": r.get("source_name") or "—",
             "status": r.get("status") or r.get("state") or "—",
             "created_at": r.get("created_at") or "—",

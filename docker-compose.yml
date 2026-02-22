@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - internal
+      - gni-net
     # No ports: internal only
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gni} -d ${POSTGRES_DB:-gni}"]
@@ -29,7 +29,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - internal
+      - gni-net
     # No ports: internal only
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -44,7 +44,7 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     networks:
-      - internal
+      - gni-net
     # No ports: internal only
     healthcheck:
       test: ["CMD-SHELL", "ollama list 2>/dev/null || exit 1"]
@@ -54,6 +54,7 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # /wa/status, /wa/qr, /wa/connect protected by X-API-Key (API_KEY); usable from internal network (e.g. wa-qr-ui) with same key.
   api:
     build:
       context: .
@@ -65,16 +66,19 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gni}:${POSTGRES_PASSWORD:-gni}@postgres:5432/${POSTGRES_DB:-gni}
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      API_KEY: ${API_KEY:-}
+      DESK24H_ENABLED: ${DESK24H_ENABLED:-0}
+      DESK24H_DB_PATH: ${DESK24H_DB_PATH:-data/gni.db}
     env_file: .env
     volumes:
-      - ./data/wa-auth:/app/data/wa-auth
+      - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - internal
+      - gni-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8000/health || exit 1"]
       interval: 10s
@@ -95,6 +99,7 @@ services:
       TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
       TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
       TELETHON_SESSION_PATH: ${TELETHON_SESSION_PATH:-/data/telethon/session}
+      TELEGRAM_SOURCES: ${TELEGRAM_SOURCES:-}
       RSS_SOURCES_PATH: ${RSS_SOURCES_PATH:-}
       DATA_SOURCES_PATH: ${DATA_SOURCES_PATH:-}
     env_file: .env
@@ -106,7 +111,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - internal
+      - gni-net
     restart: unless-stopped
 
   worker:
@@ -139,7 +144,7 @@ services:
       ollama:
         condition: service_healthy
     networks:
-      - internal
+      - gni-net
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import redis; redis.Redis.from_url('redis://redis:6379/0').ping()\" || exit 1"]
       interval: 10s
@@ -149,6 +154,7 @@ services:
     restart: unless-stopped
 
   # Optional: enable with --profile whatsapp. Build context: apps/whatsapp-bot (inside repo).
+  # Uses MTU 1400 network to avoid WS/TLS PMTU issues on VPS.
   whatsapp-bot:
     build:
       context: apps/whatsapp-bot
@@ -162,12 +168,16 @@ services:
     env_file: .env
     volumes:
       - ./data/wa-auth:/data/wa-auth
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
-      - internal
+      - gni-net
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3100/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\" || exit 1"]
+      # Process alive (local /health); optional: redis reachable from container
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3100/health', r => { if (r.statusCode !== 200) process.exit(1); r.resume(); const n=require('net'); const s=n.createConnection(6379,'redis'); s.on('connect',()=>{s.destroy();process.exit(0)}); s.on('error',()=>process.exit(0)); setTimeout(()=>process.exit(0),4000); }).on('error',()=>process.exit(1))\" || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
       start_period: 30s
     restart: unless-stopped
@@ -185,14 +195,27 @@ services:
     env_file: .env
     environment:
       GNI_API_BASE_URL: http://api:8000
+      API_KEY: ${API_KEY:-}
       WA_QR_BRIDGE_TOKEN: ${WA_QR_BRIDGE_TOKEN:-}
       UI_PASSWORD: ${UI_PASSWORD:-}
       AUTO_REFRESH_SECONDS: ${AUTO_REFRESH_SECONDS:-3}
+      STREAMLIT_SERVER_RUN_ON_SAVE: "false"
+      STREAMLIT_SERVER_FILE_WATCHER_TYPE: none
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_PORT: "8501"
     depends_on:
       api:
         condition: service_healthy
     networks:
-      - internal
+      - gni-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     profiles:
       - qr-ui
     restart: unless-stopped
@@ -211,7 +234,7 @@ services:
     ports:
       - "0.0.0.0:9090:9090"
     networks:
-      - internal
+      - gni-net
     depends_on:
       - api
     profiles:
@@ -233,7 +256,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - internal
+      - gni-net
     entrypoint: ["/bin/sh", "/scripts/backup_postgres.sh"]
     profiles:
       - backup
@@ -247,3 +270,8 @@ volumes:
 networks:
   internal:
     driver: bridge
+  # Lower MTU to avoid WS/TLS PMTU issues on VPS (silent failures on upgrade).
+  gni-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"

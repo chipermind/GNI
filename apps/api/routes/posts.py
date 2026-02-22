@@ -87,4 +87,4 @@ def list_posts(
             "rendered_text": rendered,
             "draft_payload": payload,
         })
-    return {"items": out, "total": len(out)}
+    return {"items": out, "total": total, "limit": limit, "offset": offset}

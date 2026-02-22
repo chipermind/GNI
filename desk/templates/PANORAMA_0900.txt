@@ -1,0 +1,17 @@
+📋 PANORAMA | 09:00
+
+{{HEADLINE}}
+
+📊 Markets
+{{MARKETS_BLOCK}}
+
+📰 Intel
+{{INTEL_BLOCK}}
+
+{{FLOW_BLOCK}}
+
+{{RISK_BLOCK}}
+
+📌 {{READING_BLOCK}}
+
+{{FOOTER}}

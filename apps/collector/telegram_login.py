@@ -13,6 +13,20 @@ _repo = Path(__file__).resolve().parent.parent.parent
 if str(_repo) not in sys.path:
     sys.path.insert(0, str(_repo))
 
+# Load .env from repo root
+_env_file = _repo / ".env"
+if _env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file)
+    except ImportError:
+        for line in _env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                if k.strip() in ("TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELETHON_SESSION_PATH"):
+                    os.environ.setdefault(k.strip(), v.strip())
+
 from telethon import TelegramClient
 
 

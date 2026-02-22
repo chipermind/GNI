@@ -1,0 +1,12 @@
+🌊 FLOW | 13:30
+
+{{HEADLINE}}
+
+📊 Markets
+{{MARKETS_BLOCK}}
+
+{{FLOW_BLOCK}}
+
+{{INTEL_BLOCK}}
+
+{{FOOTER}}

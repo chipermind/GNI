@@ -129,3 +129,21 @@ def test_publish_telegram_real_send_writes_sent_status():
     assert result.external_id == "456"
     assert result.dry_run is False
     assert result.attempts >= 1
+
+
+def test_gni_send_calls_publish_telegram_once():
+    """gni_send delegates to publish_telegram with same text."""
+    from apps.publisher.gni_sender import gni_send
+
+    with patch("apps.publisher.gni_sender.publish_telegram") as mock_pub:
+        mock_pub.return_value = PublicationResult(
+            publication_id=1, status="sent", external_id="99", dry_run=False, attempts=1
+        )
+        result = gni_send("test message", meta={}, dry_run=False)
+    mock_pub.assert_called_once_with(
+        messages=["test message"],
+        channel="telegram",
+        dry_run=False,
+        session=None,
+    )
+    assert result.status == "sent"

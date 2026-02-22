@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -52,9 +53,23 @@ async def lifespan(app: FastAPI):
     from apps.api.wa_keepalive import run_keepalive_loop
     _wa_keepalive_task = asyncio.create_task(run_keepalive_loop())
 
+    # Desk 24H scheduler (optional, off by default)
+    if os.getenv("DESK24H_ENABLED", "0") == "1":
+        try:
+            from desk.scheduler import start_scheduler
+            start_scheduler(app)
+        except Exception as e:
+            logger.warning("Desk scheduler start failed: %s", e)
+
     yield
 
-    # Shutdown: cancel keepalive, drain in-flight
+    # Shutdown: cancel keepalive, desk scheduler (if enabled), drain in-flight
+    if os.getenv("DESK24H_ENABLED", "0") == "1":
+        try:
+            from desk.scheduler import shutdown_scheduler
+            shutdown_scheduler()
+        except Exception:
+            pass
     _wa_keepalive_task.cancel()
     try:
         await _wa_keepalive_task

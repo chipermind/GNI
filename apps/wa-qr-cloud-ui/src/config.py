@@ -39,10 +39,10 @@ def has_seed_for_legacy() -> bool:
 
 
 def get_config() -> dict[str, Any]:
-    """Return full config dict. GNI_API_BASE_URL optional (empty OK)."""
-    base_url = _get("GNI_API_BASE_URL", "").rstrip("/")
-    # Always use /admin/wa/* endpoints (WA_API_PREFIX ignored)
-    wa_prefix = "/admin/wa"
+    """Return full config dict. GNI_API_BASE_URL optional (default http://api:8000)."""
+    base_url = _get("GNI_API_BASE_URL", "http://api:8000").rstrip("/")
+    # WA Connect UI uses /wa/* with X-API-Key only (WA_API_PREFIX kept for reference)
+    wa_prefix = "/wa"
     token = _get("WA_QR_BRIDGE_TOKEN")
     seed_email = _get("SEED_CLIENT_EMAIL")
     seed_password = _get("SEED_CLIENT_PASSWORD")

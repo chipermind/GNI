@@ -5,6 +5,7 @@ Validates JSON with Pydantic; retries once (max 1) with STRICT JSON REPAIR on in
 Request timeout prevents pipeline freeze.
 
 OLLAMA_MODE: native (default) uses /api/chat; openai_compat uses /v1/chat/completions.
+If /api/chat returns 404 (some Ollama setups), native mode falls back to /api/generate.
 """
 import asyncio
 import os
@@ -29,12 +30,12 @@ from .prompts import (
     generate_prompt,
     get_generate_system,
 )
-from apps.shared.env_helpers import parse_int
+from apps.shared.env_helpers import get_int_env
 
 from .schemas import ClassifyResult, GenerateResult, validate_generate_payload
 
 OLLAMA_REQUEST_TIMEOUT = float(os.environ.get("OLLAMA_REQUEST_TIMEOUT", "120.0"))
-MAX_JSON_RETRY = get_int_env("OLLAMA_MAX_JSON_RETRY", default=1)
+MAX_JSON_RETRY = get_int_env("OLLAMA_MAX_JSON_RETRY", 1)
 OLLAMA_MODE = (os.environ.get("OLLAMA_MODE", "native") or "native").lower()
 OLLAMA_BASE_URL_DEFAULT = "http://ollama:11434"
 
@@ -57,6 +58,12 @@ def _chat_endpoint(base_url: str) -> str:
     if OLLAMA_MODE == "openai_compat":
         return f"{base}/v1/chat/completions"
     return f"{base}/api/chat"
+
+
+def _generate_endpoint(base_url: str) -> str:
+    """Legacy /api/generate endpoint (fallback when /api/chat returns 404)."""
+    base = _normalize_base_url(base_url)
+    return f"{base}/api/generate"
 
 
 def _extract_json(text: str) -> Optional[str]:
@@ -94,6 +101,11 @@ def _extract_content_from_response(data: dict) -> str:
     return (msg.get("content") or "").strip()
 
 
+def _extract_content_from_generate(data: dict) -> str:
+    """Extract content from /api/generate response (returns {"response": "..."})."""
+    return (data.get("response") or "").strip()
+
+
 async def _chat_async(
     base_url: str,
     model: str,
@@ -106,17 +118,27 @@ async def _chat_async(
     """POST to chat endpoint; return combined response content. Non-blocking with timeout."""
     t0 = time.perf_counter()
     url = _chat_endpoint(base_url)
+    user_content = user + (STRICT_JSON_REPAIR if retry_with_repair else "")
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": user + (STRICT_JSON_REPAIR if retry_with_repair else "")},
+            {"role": "user", "content": user_content},
         ],
         "stream": False,
     }
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=payload)
+            # Fallback to /api/generate when /api/chat returns 404 (some Ollama setups)
+            if resp.status_code == 404 and OLLAMA_MODE != "openai_compat":
+                url_gen = _generate_endpoint(base_url)
+                prompt = f"System: {system}\n\nUser: {user_content}"
+                gen_payload = {"model": model, "prompt": prompt, "stream": False}
+                resp_gen = await client.post(url_gen, json=gen_payload)
+                resp_gen.raise_for_status()
+                data = resp_gen.json()
+                return _extract_content_from_generate(data)
             resp.raise_for_status()
         data = resp.json()
         return _extract_content_from_response(data)

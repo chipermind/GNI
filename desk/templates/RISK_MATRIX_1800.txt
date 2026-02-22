@@ -1,0 +1,14 @@
+📉 RISK MATRIX | 18:00
+
+{{HEADLINE}}
+
+{{RISK_BLOCK}}
+
+📊 Markets
+{{MARKETS_BLOCK}}
+
+{{INTEL_BLOCK}}
+
+{{FLOW_BLOCK}}
+
+{{FOOTER}}

@@ -1,5 +1,12 @@
-# RSS sources for GNI OSINT pipeline (Crypto, Macro, Social). Flux 24/7 on VM via collector + worker.
+# RSS sources for GNI OSINT pipeline (Crypto, Macro, Social, Tech, Intel). Flux 24/7 on VM via collector + worker.
 # URLs can use env placeholders (e.g. ${CNBC_RSS_URL_PLACEHOLDER}). Document placeholders in .env.example.
+# Telegram channels: add via scripts/add_telegram_sources.py (chat_id from telegram_list_chats_telethon.py).
+
+tech:
+  - name: Hacker News
+    url: https://hnrss.org/frontpage
+  - name: Hacker News Show
+    url: https://hnrss.org/show
 
 crypto:
   - name: CoinDesk

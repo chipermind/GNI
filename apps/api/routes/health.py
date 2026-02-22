@@ -62,22 +62,20 @@ def readiness():
 
 @router.get("/health")
 def health():
-    """Legacy: same as readiness. Prefer /health/ready for orchestration. FAIL (503) if any critical dependency down."""
+    """Legacy: same as readiness. Returns 200 with degraded status when ollama down (so Monitoring UI stays reachable)."""
     db_ok = check_db()
     redis_ok = _check_redis()
     ollama_ok = _check_ollama()
-    ready = db_ok and redis_ok and ollama_ok
-    if not ready:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "fail",
-                "db": "ok" if db_ok else "unreachable",
-                "redis": "ok" if redis_ok else "unreachable",
-                "ollama": "ok" if ollama_ok else "unreachable",
-            },
-        )
-    return {"status": "ok", "db": "ok", "redis": "ok", "ollama": "ok"}
+    content = {
+        "status": "ok" if (db_ok and redis_ok and ollama_ok) else "degraded",
+        "db": "ok" if db_ok else "unreachable",
+        "redis": "ok" if redis_ok else "unreachable",
+        "ollama": "ok" if ollama_ok else "unreachable",
+    }
+    # 503 only when db or redis down; 200 when ollama down (degraded)
+    if not db_ok or not redis_ok:
+        return JSONResponse(status_code=503, content={**content, "status": "fail"})
+    return content
 
 
 @router.get("/health/detailed")

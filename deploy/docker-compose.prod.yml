@@ -1,0 +1,206 @@
+# Production VM deployment — required services only, named volumes, healthchecks.
+# Run from repo root: docker compose -f deploy/docker-compose.prod.yml --project-directory . up -d
+# Build context is repo root (.. relative to deploy/).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gni}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gni}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gni-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gni} -d ${POSTGRES_DB:-gni}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    networks:
+      - gni-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - gni-net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # /wa/status, /wa/qr, /wa/connect protected by X-API-Key (API_KEY); usable from internal network (e.g. wa-qr-ui) with same key.
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "0.0.0.0:${API_PORT:-8000}:8000"
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gni}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gni}
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      API_KEY: ${API_KEY:-}
+    env_file: ../.env
+    volumes:
+      - wa_auth:/app/data/wa-auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gni-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  collector:
+    build:
+      context: ..
+      dockerfile: apps/collector/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gni}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gni}
+      COLLECTOR_INTERVAL_MINUTES: ${COLLECTOR_INTERVAL_MINUTES:-15}
+      INGEST_LIMIT: ${INGEST_LIMIT:-50}
+      TELEGRAM_SINCE_MINUTES: ${TELEGRAM_SINCE_MINUTES:-60}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      TELETHON_SESSION_PATH: ${TELETHON_SESSION_PATH:-/data/telethon/session}
+      RSS_SOURCES_PATH: ${RSS_SOURCES_PATH:-}
+      DATA_SOURCES_PATH: ${DATA_SOURCES_PATH:-}
+    env_file: ../.env
+    volumes:
+      - telethon_data:/data/telethon
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gni-net
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gni}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gni}
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_PULL_ON_START: ${OLLAMA_PULL_ON_START:-true}
+      WHATSAPP_BOT_BASE_URL: ${WHATSAPP_BOT_BASE_URL:-http://whatsapp-bot:3100}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_TARGET_CHAT_ID: ${TELEGRAM_TARGET_CHAT_ID:-${TELEGRAM_CHAT_ID:-}}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+      MAKE_WEBHOOK_URL: ${MAKE_WEBHOOK_URL:-}
+      RUN_EVERY_MINUTES: ${RUN_EVERY_MINUTES:-15}
+      DRY_RUN: ${DRY_RUN:-1}
+    env_file: ../.env
+    volumes:
+      - telethon_data:/data/telethon
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - gni-net
+    restart: unless-stopped
+
+  whatsapp-bot:
+    build:
+      context: ..
+      dockerfile: apps/whatsapp-bot/Dockerfile
+    ports:
+      - "0.0.0.0:3100:3100"
+    environment:
+      PORT: 3100
+      AUTH_FOLDER: /data/wa-auth
+      REDIS_URL: redis://redis:6379/0
+    env_file: ../.env
+    volumes:
+      - wa_auth:/data/wa-auth
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gni-net
+    healthcheck:
+      # Process alive (local /health); optionally verifies redis reachable (failure does not mark unhealthy)
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3100/health', r => { if (r.statusCode !== 200) process.exit(1); r.resume(); const n=require('net'); const s=n.createConnection(6379,'redis'); s.on('connect',()=>{s.destroy();process.exit(0)}); s.on('error',()=>process.exit(0)); setTimeout(()=>process.exit(0),4000); }).on('error',()=>process.exit(1))\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  wa-qr-ui:
+    build:
+      context: ..
+      dockerfile: apps/wa-qr-cloud-ui/Dockerfile
+    ports:
+      - "0.0.0.0:8501:8501"
+    env_file: ../.env
+    environment:
+      GNI_API_BASE_URL: http://api:8000
+      API_KEY: ${API_KEY:-}
+      WA_QR_BRIDGE_TOKEN: ${WA_QR_BRIDGE_TOKEN:-}
+      AUTO_REFRESH_SECONDS: ${AUTO_REFRESH_SECONDS:-3}
+      STREAMLIT_SERVER_RUN_ON_SAVE: "false"
+      STREAMLIT_SERVER_FILE_WATCHER_TYPE: none
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_PORT: "8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - gni-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_models:
+  wa_auth:
+  telethon_data:
+
+networks:
+  internal:
+    driver: bridge

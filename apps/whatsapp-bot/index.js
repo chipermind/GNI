@@ -1,7 +1,8 @@
 /**
  * WhatsApp QR bot — serves /health, /status, /qr, POST /reconnect for API bridge.
- * Persists QR state to /data/wa-auth/last_qr.json for reliability across restarts.
- * AUTH_FOLDER, PORT from env.
+ * Auth state is persisted under /data/wa-auth (volume-mounted); QR to last_qr.json + Redis wa:last_qr.
+ * When connected: Redis wa:connected = true; on disconnect QR keys cleared and wa:connected = false.
+ * AUTH_FOLDER, PORT, REDIS_URL from env. Process never exits on disconnect; keep-alive prevents clean exit.
  */
 const express = require('express');
 const fs = require('fs');
@@ -15,6 +16,53 @@ const PORT = parseInt(process.env.PORT || '3100', 10);
 // Ensure AUTH_FOLDER is EXACTLY /data/wa-auth (required by docker volume mount)
 const AUTH_FOLDER = process.env.AUTH_FOLDER || '/data/wa-auth';
 const QR_EXPIRY_SECONDS = 120; // QR expires in 120 seconds
+
+// Redis keys for API bridge (GET /wa/qr reads from cache)
+const WA_QR_KEY = 'wa:last_qr';
+const WA_QR_TS_KEY = 'wa:last_qr_ts';
+const WA_CONNECTED_KEY = 'wa:connected';
+
+let redisClientPromise = null;
+function getRedisClient() {
+  if (!process.env.REDIS_URL) return null;
+  if (redisClientPromise !== null && redisClientPromise !== undefined) return redisClientPromise;
+  try {
+    const { createClient } = require('redis');
+    const c = createClient({ url: process.env.REDIS_URL });
+    c.on('error', () => {});
+    redisClientPromise = c.connect().then(() => c).catch(() => null);
+  } catch (e) {
+    redisClientPromise = Promise.resolve(null);
+  }
+  return redisClientPromise;
+}
+
+/** Write QR to Redis (wa:last_qr, wa:last_qr_ts) for API bridge. Fire-and-forget. */
+function writeQrToRedis(qr, ts) {
+  const p = getRedisClient();
+  if (!p) return;
+  p.then((client) => {
+    if (!client) return;
+    const ttl = qr ? QR_EXPIRY_SECONDS : 1;
+    if (qr) {
+      return Promise.all([
+        client.setEx(WA_QR_KEY, ttl, qr),
+        client.setEx(WA_QR_TS_KEY, ttl, String(ts)),
+      ]);
+    }
+    return client.del(WA_QR_KEY, WA_QR_TS_KEY);
+  }).catch(() => {});
+}
+
+/** Set wa:connected in Redis (true/false). Fire-and-forget. */
+function setRedisConnected(connected) {
+  const p = getRedisClient();
+  if (!p) return;
+  p.then((client) => {
+    if (!client) return;
+    return client.set(WA_CONNECTED_KEY, connected ? 'true' : 'false');
+  }).catch(() => {});
+}
 
 // Helper for writing QR state file (matches exact format requested)
 const QR_FILE = path.join(AUTH_FOLDER, 'last_qr.json');
@@ -37,6 +85,8 @@ let sock = null;
 let qrValue = null;
 let qrTimestamp = null;
 let lastDisconnectReason = null;
+let lastStatusCode = null;
+let lastSeenQrAt = null;
 let connected = false;
 let connecting = false;
 let phoneNumber = null;
@@ -74,6 +124,45 @@ function recordConnectionFailure() {
 function getBackoffDelayMs() {
   const sec = Math.min(Math.pow(2, reconnectBackoffAttempt), BACKOFF_MAX_SECONDS);
   return sec * 1000;
+}
+
+/**
+ * Extract statusCode, reason string, and stack snippet from Baileys lastDisconnectReason.
+ * lastDisconnectReason can be { error: { output: { statusCode }, message, stack }, connection } or a string.
+ */
+function parseLastDisconnect(ld) {
+  const out = { statusCode: null, reason: null, stackTraceSnippet: null };
+  if (ld == null) return out;
+  if (typeof ld === 'string') {
+    out.reason = ld;
+    return out;
+  }
+  const err = ld.error || ld;
+  if (err && typeof err === 'object') {
+    out.statusCode = err.output?.statusCode ?? err.statusCode ?? null;
+    out.reason = err.message || err.details || JSON.stringify(ld).slice(0, 500);
+    const stack = err.stack || err.stackTrace;
+    out.stackTraceSnippet = typeof stack === 'string' ? stack.slice(0, 400) : null;
+  } else {
+    out.reason = JSON.stringify(ld).slice(0, 500);
+  }
+  return out;
+}
+
+/**
+ * Single JSON log per event: event, status, statusCode, reason, retryCount, delayMs, stackTraceSnippet.
+ */
+function logStructured(payload) {
+  const line = {
+    event: payload.event,
+    status: payload.status ?? connectionState,
+    statusCode: payload.statusCode ?? lastStatusCode,
+    reason: payload.reason ?? (typeof lastDisconnectReason === 'string' ? lastDisconnectReason : (lastDisconnectReason?.error?.message || null)),
+    retryCount: payload.retryCount ?? reconnectBackoffAttempt,
+    delayMs: payload.delayMs ?? (payload.event === 'DISCONNECTED' || payload.event === 'WA_BACKOFF' ? getBackoffDelayMs() : null),
+    stackTraceSnippet: payload.stackTraceSnippet ?? null,
+  };
+  logger.info(line, 'WA_EVENT');
 }
 
 /**
@@ -162,6 +251,7 @@ async function connect() {
   connecting = true;
   qrValue = null;
   lastDisconnectReason = null;
+  lastStatusCode = null;
   connected = false;
   
   try {
@@ -176,10 +266,12 @@ async function connect() {
     }
     
     logger.info({ AUTH_FOLDER }, 'WA_CONNECT_START');
-    
+    logStructured({ event: 'WA_CONNECT_START', status: 'connecting', retryCount: reconnectBackoffAttempt });
+
     // Use AUTH_FOLDER (defaults to /data/wa-auth, set via env in docker-compose)
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
     logger.info('WA_AUTH_STATE_READY');
+    logStructured({ event: 'WA_AUTH_STATE_READY', status: 'connecting' });
     
     sock = makeWASocket({
       auth: state,
@@ -194,9 +286,13 @@ async function connect() {
       if (up.qr) {
         qrValue = up.qr;
         qrTimestamp = Date.now();
+        lastSeenQrAt = new Date().toISOString();
         connectionState = 'qr_ready';
+        const ts = nowTs();
         logger.info({ event: 'QR_READY' }, 'QR_READY');
-        writeLastQr({ qr: up.qr, status: 'qr_ready', expires_at: nowTs() + QR_EXPIRY_SECONDS, updated_at: nowTs() });
+        logStructured({ event: 'QR_READY', status: 'qr_ready', retryCount: reconnectBackoffAttempt });
+        writeLastQr({ qr: up.qr, status: 'qr_ready', expires_at: ts + QR_EXPIRY_SECONDS, updated_at: ts });
+        writeQrToRedis(up.qr, ts);
       }
 
       // Connection state changes
@@ -208,40 +304,80 @@ async function connect() {
         qrTimestamp = null;
         connectionState = 'connected';
         logger.info({ event: 'CONNECTED' }, 'CONNECTED');
+        logStructured({ event: 'CONNECTED', status: 'connected', retryCount: 0 });
         writeLastQr({ qr: null, status: 'connected', expires_at: 0, updated_at: nowTs() });
+        writeQrToRedis(null);
+        setRedisConnected(true);
         phoneNumber = up.me?.id?.split(':')[0] || null;
       } else if (up.connection === 'close') {
         lastDisconnectReason = up.lastDisconnectReason || null;
+        const parsed = parseLastDisconnect(lastDisconnectReason);
+        lastStatusCode = parsed.statusCode;
         connected = false;
         if (isConnectionFailure(up)) {
           recordConnectionFailure();
         }
         connectionState = 'disconnected';
+        // Log full disconnect payload for diagnostics (no QR/creds)
+        logger.info({
+          event: 'DISCONNECTED_PAYLOAD',
+          lastDisconnectReason: lastDisconnectReason,
+          statusCode: parsed.statusCode,
+          reason: parsed.reason,
+          output: lastDisconnectReason?.error?.output,
+          message: lastDisconnectReason?.error?.message,
+          stackSnippet: parsed.stackTraceSnippet,
+        }, 'DISCONNECTED full payload');
+        logStructured({
+          event: 'DISCONNECTED',
+          status: 'disconnected',
+          statusCode: parsed.statusCode,
+          reason: parsed.reason,
+          retryCount: reconnectBackoffAttempt,
+          delayMs: getBackoffDelayMs(),
+          stackTraceSnippet: parsed.stackTraceSnippet,
+        });
         logger.info({ reason: lastDisconnectReason, event: 'DISCONNECTED' }, 'DISCONNECTED');
         writeLastQr({ qr: null, status: 'disconnected', lastDisconnectReason, expires_at: 0, updated_at: nowTs() });
+        writeQrToRedis(null);
+        setRedisConnected(false);
         phoneNumber = null;
       }
-      
+
       if (up.isNewLogin) {
         logger.info({ event: 'NEW_LOGIN' }, 'New login detected');
+        logStructured({ event: 'NEW_LOGIN', status: connectionState });
       }
-      
+
       // Ensure connecting flag is reset at end of handler
       connecting = false;
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', () => {
+      saveCreds();
+      logStructured({ event: 'creds.update', status: connectionState });
+    });
     
     logger.info({ event: 'SOCKET_CREATED' }, 'Baileys socket created, waiting for connection events...');
+    logStructured({ event: 'SOCKET_CREATED', status: 'connecting' });
   } catch (e) {
     connecting = false;
-    logger.error('connect fatal: %s', e?.stack || e?.message || String(e));
-    throw e; // keep behavior unless it causes crash loops; if it does, remove throw and just return
+    logger.error({ event: 'CONNECT_FATAL', err: e?.message, stack: e?.stack }, 'connect fatal: %s', e?.stack || e?.message || String(e));
+    // Do not rethrow: keep process alive so HTTP server and reconnect path remain available
   }
 }
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({
+    status: 'ok',
+    connected,
+    last_disconnect_reason: typeof lastDisconnectReason === 'string'
+      ? lastDisconnectReason
+      : (lastDisconnectReason?.error?.message || (lastDisconnectReason ? JSON.stringify(lastDisconnectReason).slice(0, 500) : null)),
+    last_status_code: lastStatusCode,
+    last_seen_qr_at: lastSeenQrAt,
+    retry_count: reconnectBackoffAttempt,
+  });
 });
 
 app.get('/netcheck', (req, res) => {
@@ -324,6 +460,9 @@ app.get('/status', (req, res) => {
     connected,
     status,
     lastDisconnectReason: lastDisconnectReason || null,
+    last_status_code: lastStatusCode,
+    last_seen_qr_at: lastSeenQrAt,
+    retry_count: reconnectBackoffAttempt,
     in_cooldown,
     cooldown_until: in_cooldown ? new Date(cooldownUntil).toISOString() : null,
     server_time: new Date().toISOString(),
@@ -418,6 +557,7 @@ app.post('/reconnect', async (req, res) => {
       const backoffMs = getBackoffDelayMs();
       if (backoffMs > 0) {
         logger.info({ event: 'WA_BACKOFF', delay_seconds: backoffMs / 1000 }, 'WA_BACKOFF');
+        logStructured({ event: 'WA_BACKOFF', status: 'disconnected', delayMs: backoffMs, retryCount: reconnectBackoffAttempt });
         await new Promise((r) => setTimeout(r, backoffMs));
       }
       reconnectBackoffAttempt += 1;
@@ -471,22 +611,31 @@ process.on('uncaughtException', (err) => {
 });
 
 async function main() {
-  // Load persisted QR state on startup
+  // Persist auth state under /data/wa-auth (volume-mounted); useMultiFileAuthState(AUTH_FOLDER) uses it
   loadQrState();
-  
-  // Connect (will use persisted auth state if available)
-  await connect();
-  
+
+  // Connect (will use persisted auth state if available). Never exits process on failure.
+  await connect().catch((e) => {
+    logger.warn({ event: 'INITIAL_CONNECT_FAILED' }, 'Initial connect failed (server will stay up): %s', e?.message);
+  });
+
   // Listen on 0.0.0.0 to accept connections from Docker network
   app.listen(PORT, '0.0.0.0', () => {
     console.log('HTTP_SERVER_STARTED', PORT);
     console.log('NETCHECK_AVAILABLE');
     logger.info({ event: 'SERVER_STARTED', port: PORT }, 'WhatsApp bot listening on 0.0.0.0:%d', PORT);
   });
+
+  // Keep event loop alive so process never exits with code 0 when idle
+  setInterval(() => {}, 1 << 30);
 }
 
 main().catch((e) => {
   console.error('STARTUP_ERROR', e);
-  logger.error({ event: 'STARTUP_ERROR' }, e);
-  process.exit(1);
+  logger.error({ event: 'STARTUP_ERROR', message: e?.message, stack: e?.stack }, 'STARTUP_ERROR: %s', e?.stack || e?.message || e);
+  // Still start HTTP server and keep process alive so /reconnect and /health work
+  app.listen(PORT, '0.0.0.0', () => {
+    logger.info({ event: 'SERVER_STARTED_AFTER_ERROR', port: PORT }, 'WhatsApp bot listening on 0.0.0.0:%d (startup had errors)', PORT);
+  });
+  setInterval(() => {}, 1 << 30);
 });

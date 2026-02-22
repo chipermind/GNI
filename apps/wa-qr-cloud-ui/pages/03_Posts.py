@@ -73,7 +73,7 @@ with tab_pending:
 
 with tab_published:
     st.subheader("Published")
-    published, err2 = get_posts(status="published", limit=20, tenant=tenant)
+    published, err2 = get_posts(status="published", limit=100, tenant=tenant)
     if err2:
         st.warning(err2)
     elif published and len(published) > 0:

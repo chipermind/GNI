@@ -1,0 +1,14 @@
+📌 EXEC SUMMARY | 20:30
+
+{{HEADLINE}}
+
+{{RISK_BLOCK}}
+
+📊 Markets
+{{MARKETS_BLOCK}}
+
+{{INTEL_BLOCK}}
+
+📌 {{READING_BLOCK}}
+
+{{FOOTER}}

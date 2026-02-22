@@ -13,7 +13,7 @@ from typing import Optional
 
 import streamlit as st
 
-from src.api import clear_wa_cache, get_wa_netcheck, get_wa_qr, get_wa_status, post_wa_reconnect
+from src.api import clear_wa_cache, get_wa_debug_info, get_wa_netcheck, get_wa_qr, get_wa_status, has_wa_api_key, post_wa_reconnect
 from src.ui import inject_app_css, render_sidebar
 from src.config import get_config
 
@@ -31,6 +31,55 @@ POLL_MAX_WAIT = 120
 POLL_MAX_TICKS = len(POLL_INTERVALS)
 NOT_READY_WARN_THRESHOLD_SEC = 90  # Show block warning after not_ready for this long
 RATE_LIMIT_BACKOFF_SECONDS = 30
+
+
+def _wa_connect_warning_type(
+    status_detail: str,
+    status_err: Optional[str],
+    netcheck_data: Optional[dict],
+    netcheck_err: Optional[str],
+) -> str:
+    """Classify connectivity warning: 'ip_blocked' | 'browser_unsupported' | 'generic'. Do not show IP blocked for auth errors."""
+    # Auth errors (401/403 token or API key) → generic, not IP blocked
+    if status_err:
+        err_lower = status_err.lower()
+        if "401" in status_err or "unauthorized" in err_lower:
+            return "generic"
+        if "403" in status_err and ("forbidden" in err_lower or "token" in err_lower or "api key" in err_lower or "authorization" in err_lower):
+            return "generic"
+    # Explicit backend signal or HTTP 403/429 from WhatsApp (non-auth)
+    if status_detail == "ip_blocked":
+        return "ip_blocked"
+    if status_err and ("429" in status_err or "403" in status_err):
+        return "ip_blocked"
+    nc = netcheck_data if isinstance(netcheck_data, dict) else {}
+    if nc.get("ok") is False:
+        sc = nc.get("status_code")
+        if sc in (403, 429):
+            return "ip_blocked"
+        err_str = str(nc.get("error") or "")
+        if "403" in err_str or "429" in err_str:
+            return "ip_blocked"
+    # Browser / user-agent / unexpected HTML
+    combined = " ".join(
+        filter(
+            None,
+            [status_err, netcheck_err, str(nc.get("error") or "")],
+        )
+    ).lower()
+    if any(
+        phrase in combined
+        for phrase in (
+            "browser not supported",
+            "unsupported browser",
+            "user-agent",
+            "unexpected html",
+            "rejected the client",
+            "unsupported browser/user-agent",
+        )
+    ):
+        return "browser_unsupported"
+    return "generic"
 
 st.set_page_config(page_title="GNI — WhatsApp Connect", layout="centered", initial_sidebar_state="expanded")
 inject_app_css()
@@ -62,55 +111,34 @@ for key, default in [
     if key not in st.session_state:
         st.session_state[key] = default
 
-token_from_env = (get_config().get("WA_QR_BRIDGE_TOKEN") or "").strip()
-has_token = bool(token_from_env) or bool((st.session_state.get("wa_qr_bridge_token") or "").strip())
-
 render_sidebar("client", "whatsapp", api_base_url=base, user_email=st.session_state.get("auth_email") or "")
 
-# --- Auth panel: when no token, or when we get 401/403 ---
-def _show_token_panel(reason: str = "required"):
-    st.markdown(
-        '<div class="status-card">'
-        "<strong>WhatsApp bridge token (WA_QR_BRIDGE_TOKEN)</strong><br>"
-        "<span class=\"muted\">This page needs the same token as on your VM (.env). "
-        "Set it in Streamlit Cloud Secrets, or paste it below (stored in this session only, never logged).</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-    with st.form("wa_token_form"):
-        tok = st.text_input("Token", type="password", placeholder="Paste WA_QR_BRIDGE_TOKEN", key="wa_token_input")
-        if st.form_submit_button("Save and continue"):
-            v = (tok or "").strip()
-            if v:
-                st.session_state.wa_qr_bridge_token = v
-                clear_wa_cache()
-                _cached_status.clear()
-                _cached_qr.clear()
-                st.rerun()
-            else:
-                st.warning("Enter a token.")
-
-if not has_token:
+# --- Require API key for WA status/QR (X-API-Key only; no /admin/wa/*) ---
+if not has_wa_api_key():
     st.title("WhatsApp Connect")
     st.caption("Link your WhatsApp account to send and receive messages.")
-    _show_token_panel()
+    st.error("**API_KEY is required.** Set `API_KEY` or `ADMIN_API_KEY` in Streamlit Cloud Secrets (or in your environment).")
+    st.info("WA status and QR use `GET {base}/wa/status` and `/wa/qr` with header `X-API-Key`. No secrets are shown in the UI.")
     st.stop()
 
-# --- Fetch status (may return 401/403) ---
-status_data, status_err = _cached_status()
+# --- Fetch status (GET /wa/status with X-API-Key). Never crash on request errors. ---
+try:
+    status_data, status_err = _cached_status()
+except Exception as e:
+    status_data, status_err = None, str(e)[:200]
+
 is_auth_error = status_err and (
     "Unauthorized" in (status_err or "")
-    or "403" in (status_err or "")
     or "401" in (status_err or "")
+    or "403" in (status_err or "")
+    or "API_KEY" in (status_err or "")
     or "Missing Authorization" in (status_err or "")
-    or "WA_QR_BRIDGE_TOKEN" in (status_err or "")
 )
 
 if is_auth_error:
     st.title("WhatsApp Connect")
     st.caption("Link your WhatsApp account to send and receive messages.")
-    st.error("Authentication failed: the backend requires a valid **WA_QR_BRIDGE_TOKEN**.")
-    _show_token_panel("invalid")
+    st.error("Authentication failed: " + (status_err or "Check API_KEY in Streamlit Cloud Secrets."))
     st.stop()
 
 if status_err and ("429" in status_err or "Rate limit" in status_err):
@@ -135,8 +163,11 @@ if status_detail in ("not_ready", "disconnected") and not connected:
 else:
     st.session_state.wa_not_ready_since = None
 
-# Fetch netcheck (connectivity to WhatsApp from bot container)
-netcheck_data, netcheck_err = get_wa_netcheck()
+# Fetch netcheck (connectivity to WhatsApp from bot container). Never crash.
+try:
+    netcheck_data, netcheck_err = get_wa_netcheck()
+except Exception as e:
+    netcheck_data, netcheck_err = None, str(e)[:200]
 netcheck_ok = isinstance(netcheck_data, dict) and netcheck_data.get("ok") is True
 show_block_warning = False
 if netcheck_data and isinstance(netcheck_data, dict) and netcheck_data.get("ok") is False:
@@ -155,6 +186,18 @@ with _col2:
     st.title("WhatsApp Connect")
     st.markdown('<p class="subtitle-muted">Link your WhatsApp account to send and receive messages.</p>', unsafe_allow_html=True)
 
+# --- Diagnostics box (API base URL, API_KEY set, last status + error; no secrets) ---
+try:
+    _diag = get_wa_debug_info()
+except Exception:
+    _diag = {}
+with st.container():
+    st.caption("**Diagnostics**")
+    st.text("API base URL: %s" % (_diag.get("effective_base_url") or "(not set)"))
+    st.text("API_KEY set: %s" % _diag.get("api_key_set", False))
+    st.text("Last response status: %s" % (_diag.get("last_http_status") if _diag.get("last_http_status") is not None else "—"))
+    st.text("Last error: %s" % ((_diag.get("last_error") or "").strip() or "—"))
+
 # --- Status badges (clean) ---
 if connected:
     st.success("✅ **Connected** — Session active.")
@@ -169,14 +212,26 @@ else:
 if last_reason:
     st.caption("Last disconnect: " + str(last_reason))
 
-if show_block_warning and not connected:
-    st.warning(
-        "**Your server IP/network appears blocked by WhatsApp.** "
-        "Recommended: use **Telegram** or **Make webhook** for delivery."
-    )
+if not connected:
+    st.caption("WhatsApp unavailable, using Telegram fallback.")
 
-if token_from_env:
-    st.caption("Using token from environment.")
+if show_block_warning and not connected:
+    warning_type = _wa_connect_warning_type(
+        status_detail, status_err, netcheck_data, netcheck_err
+    )
+    if warning_type == "ip_blocked":
+        st.warning(
+            "**Your server IP/network appears blocked by WhatsApp.** "
+            "Recommended: use **Telegram** or **Make webhook** for delivery."
+        )
+    elif warning_type == "browser_unsupported":
+        st.warning(
+            "WhatsApp Web rejected the client (unsupported browser/user-agent). "
+            "This often happens in headless/server environments."
+        )
+    else:
+        st.warning("Unable to connect to WhatsApp bridge. Check bridge logs.")
+
 
 st.divider()
 st.subheader("How to connect")
@@ -368,9 +423,26 @@ with st.expander("📡 Connectivity (netcheck + bot status)"):
     if netcheck_err:
         st.caption("Netcheck request: " + str(netcheck_err))
 
-with st.expander("🔍 Debug (no secrets)"):
-    st.caption("Status and polling state (token never shown):")
-    st.code("Connect clicked: %s\nPolling: %s\nPoll count: %s\nLast refresh: %s" % (
+with st.expander("Debug"):
+    info = get_wa_debug_info()
+    st.caption("**Effective GNI_API_BASE_URL:**")
+    st.code(info.get("effective_base_url") or "(not set)", language=None)
+    st.caption("**Auth mode:**")
+    st.code(info.get("auth_mode") or "—", language=None)
+    st.caption("**Endpoints:**")
+    st.json(info.get("endpoints") or {})
+    st.caption("**Endpoint used (last request):**")
+    st.code(info.get("endpoint_used") or "—", language=None)
+    st.caption("**Last HTTP status:**")
+    st.code(str(info.get("last_http_status")) if info.get("last_http_status") is not None else "—", language=None)
+    st.caption("**Last poll timestamp:**")
+    st.code(info.get("last_poll_timestamp") or "—", language=None)
+    st.caption("**Last response body (sanitized, first 200 chars):**")
+    st.code(info.get("last_response_preview") or "—", language=None)
+    st.caption("_Token values are never shown._")
+    st.divider()
+    st.caption("Status and polling state:")
+    st.code("Connect clicked: %s | Polling: %s | Poll count: %s | Last refresh: %s" % (
         st.session_state.wa_connect_clicked,
         st.session_state.wa_polling,
         st.session_state.wa_poll_count,
@@ -379,6 +451,5 @@ with st.expander("🔍 Debug (no secrets)"):
     if status_err:
         st.error("Status error: " + str(status_err))
     if status_data and isinstance(status_data, dict):
-        # Safe display: no token fields
         safe = {k: v for k, v in status_data.items() if "token" not in k.lower() and "secret" not in k.lower()}
         st.json(safe)

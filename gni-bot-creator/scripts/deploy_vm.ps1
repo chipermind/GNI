@@ -34,15 +34,33 @@ if ($Full) {
     Write-Host "Syncing docker-compose.yml..."
     scp @SSH_OPTS (Join-Path $GNIRoot "docker-compose.yml") "${VM_USER}@${VM_HOST}:${VM_PATH}/"
 
-    # Sync scripts (verify_wa_flow.sh, etc.)
+    # Sync scripts (verify_wa_flow.sh, add_telegram_sources.py, etc.)
     $scriptsDir = Join-Path $GNIRoot "scripts"
     if (Test-Path $scriptsDir) {
         Write-Host "Syncing scripts..."
         ssh @SSH_OPTS "${VM_USER}@${VM_HOST}" "mkdir -p ${VM_PATH}/scripts"
-        Get-ChildItem $scriptsDir -Filter "*.sh" | ForEach-Object {
+        Get-ChildItem $scriptsDir -File | Where-Object { $_.Extension -in ".sh",".py" } | ForEach-Object {
             scp @SSH_OPTS $_.FullName "${VM_USER}@${VM_HOST}:${VM_PATH}/scripts/"
         }
         ssh @SSH_OPTS "${VM_USER}@${VM_HOST}" "chmod +x ${VM_PATH}/scripts/*.sh 2>/dev/null || true"
+    }
+
+    # Sync collector (telegram ingest, add_telegram_sources dependency)
+    $collectorDir = Join-Path $GNIRoot "apps\collector"
+    if (Test-Path $collectorDir) {
+        Write-Host "Syncing apps/collector..."
+        ssh @SSH_OPTS "${VM_USER}@${VM_HOST}" "mkdir -p ${VM_PATH}/apps/collector"
+        Get-ChildItem $collectorDir -File | ForEach-Object {
+            scp @SSH_OPTS $_.FullName "${VM_USER}@${VM_HOST}:${VM_PATH}/apps/collector/"
+        }
+    }
+
+    # Sync data/sources.yaml
+    $sourcesYaml = Join-Path $GNIRoot "data\sources.yaml"
+    if (Test-Path $sourcesYaml) {
+        Write-Host "Syncing data/sources.yaml..."
+        ssh @SSH_OPTS "${VM_USER}@${VM_HOST}" "mkdir -p ${VM_PATH}/data"
+        scp @SSH_OPTS $sourcesYaml "${VM_USER}@${VM_HOST}:${VM_PATH}/data/"
     }
 
     # Sync API: wa_bridge, wa_public, monitoring, wa_qr_cache, wa_keepalive, main

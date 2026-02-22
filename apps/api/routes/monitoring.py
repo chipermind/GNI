@@ -72,6 +72,7 @@ def get_monitoring(
         {
             "id": i.id,
             "status": i.status or "—",
+            "source_type": i.source_type or "rss",
             "created_at": i.created_at.isoformat() if i.created_at else None,
             "updated_at": i.updated_at.isoformat() if i.updated_at else None,
             "source_name": i.source_name or "—",
