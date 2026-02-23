@@ -1,19 +1,24 @@
 # Deploy gni-bot-creator to VM
 # Usage: .\scripts\deploy_vm.ps1
-# Requires: git pushed, SSH access to VM
+#        .\scripts\deploy_vm.ps1 -Full
+#        .\scripts\deploy_vm.ps1 -SshTarget gni-vm
+# Requires: SSH key (no password), git pushed
 # Run from repo root. SSHs to VM and runs pull + docker compose + smoke.
 
+param(
+    [switch]$Full,
+    [string]$SshTarget = $env:SSH_TARGET
+)
+if (-not $SshTarget) { $SshTarget = "gni-vm" }
+
 $ErrorActionPreference = "Stop"
-$VM_USER = if ($env:VM_USER) { $env:VM_USER } else { "root" }
-$VM_HOST = if ($env:VM_HOST) { $env:VM_HOST } else { "217.216.84.81" }
 $VM_PATH = if ($env:VM_PATH) { $env:VM_PATH } else { "/opt/gni-bot-creator" }
 
 Write-Host "=== GNI Bot Creator - VM Deploy ===" -ForegroundColor Cyan
-Write-Host "  VM: ${VM_USER}@${VM_HOST}"
+Write-Host "  SSH: $SshTarget"
 Write-Host "  Path: ${VM_PATH}"
 Write-Host ""
 
-$remote = "${VM_USER}@${VM_HOST}"
 $deployScript = Join-Path $env:TEMP "gni-deploy-remote.sh"
 
 # Bash script (single-quote so PowerShell does not parse)
@@ -35,13 +40,17 @@ echo '=== Container status ==='
 docker compose ps
 echo '=== Init desk DB ==='
 docker compose exec -T api python scripts/migrate_db.py 2>/dev/null || echo 'Migrate skipped'
-echo '=== Smoke desk ==='
-docker compose exec -T api python -m desk.scheduler --dry-run --type PANORAMA_0900 2>/dev/null || echo 'Smoke skipped'
+echo '=== Smoke desk (compose dry-run + save to DB) ==='
+docker compose exec -T api python -m desk.scheduler --dry-run --type PANORAMA_0900 --compose 2>/dev/null || echo 'Desk smoke skipped (Ollama may be warming)'
 echo '=== Deploy done ==='
 '@
 
 $bashContent = $bashContent.Replace('/opt/gni-bot-creator', $VM_PATH)
-$bashContent | Out-File -FilePath $deployScript -Encoding utf8
+# LF only (no CRLF) - Windows Out-File would add \r and break bash on Linux
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($bashContent.Replace("`r`n", "`n").Replace("`r", "`n"))
+[System.IO.File]::WriteAllBytes($deployScript, $bytes)
+
 Write-Host "Running remote deploy..."
-Get-Content $deployScript -Raw | ssh $remote 'bash -s'
+scp -q $deployScript "${SshTarget}:/tmp/gni-deploy.sh"
+ssh $SshTarget "bash /tmp/gni-deploy.sh; rm -f /tmp/gni-deploy.sh"
 Remove-Item $deployScript -ErrorAction SilentlyContinue

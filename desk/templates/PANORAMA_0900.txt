@@ -14,4 +14,6 @@
 
 📌 {{READING_BLOCK}}
 
+Assumptions (if X then Y): {{ASSUMPTIONS_BLOCK}}
+
 {{FOOTER}}

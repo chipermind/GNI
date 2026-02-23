@@ -176,6 +176,8 @@ def run_window(desk_type: str) -> dict[str, Any]:
     last_posts = get_last_posts(hours=24)
     prev_texts = [p["text"] for p in last_posts if p.get("text")]
     context = {"last_posts": [{"desk_type": p["desk_type"], "summary": (p.get("text") or "")[:300]} for p in last_posts]}
+    from desk.evidence_pack import build_evidence_pack
+    context["evidence_pack"] = build_evidence_pack(desk_type, raw)
     if desk_type == "EXEC_SUMMARY_2030":
         from desk.day_state import build_exec_closure, day_key, load_day_state
         day_state = load_day_state(day_key(tz="America/Recife"))
@@ -191,7 +193,7 @@ def run_window(desk_type: str) -> dict[str, Any]:
         return summary
 
     post = {"type": desk_type, "text": result["text"], "meta": result.get("meta", {})}
-    ok, reason = validate(post, prev_texts=prev_texts)
+    ok, reason = validate(post, prev_texts=prev_texts, packs=context.get("evidence_pack"))
     if not ok:
         summary["reason"] = reason
         logger.info("run_window %s validation failed: %s", desk_type, reason)
@@ -226,7 +228,9 @@ def run_window(desk_type: str) -> dict[str, Any]:
     if ok and not dry_run:
         try:
             from apps.publisher.gni_sender import gni_send
-            gni_send(result["text"], meta=meta, dry_run=False)
+            send_result = gni_send(result["text"], meta=meta, dry_run=False)
+            sent_ok = getattr(send_result, "status", "") == "sent" if send_result else False
+            logger.info("run_window %s sent_ok=%s", desk_type, sent_ok)
         except ImportError as ie:
             summary["reason"] = "gni_send_unavailable"
             logger.warning("run_window %s gni_send import failed: %s", desk_type, ie)
@@ -294,6 +298,7 @@ def shutdown_scheduler() -> None:
 
 if __name__ == "__main__":
     import argparse
+    import sys
     import re
     from pathlib import Path
 
@@ -315,10 +320,17 @@ if __name__ == "__main__":
     }
 
     parser = argparse.ArgumentParser(description="Desk 24H scheduler smoke CLI")
-    parser.add_argument("--dry-run", action="store_true", default=True, help="Print only, no send (default: True)")
+    parser.add_argument("--dry-run", action="store_true", default=True, help="No Telegram send (default: True)")
     parser.add_argument("--no-dry-run", action="store_false", dest="dry_run")
     parser.add_argument("--type", required=True, dest="desk_type", help="Desk type, e.g. PANORAMA_0900")
+    parser.add_argument("--compose", action="store_true", help="Run full compose (Ollama) + validate + save to DB")
     args = parser.parse_args()
+
+    if args.compose:
+        os.environ["DESK_DRY_RUN"] = "1" if args.dry_run else "0"
+        summary = run_window(args.desk_type)
+        print("[SMOKE] Compose result:", json.dumps(summary, indent=2, default=str))
+        sys.exit(0 if summary.get("ok") else 1)
 
     templates_dir = Path(__file__).resolve().parent / "templates"
     md_file = TYPE_TO_MD.get(args.desk_type)
