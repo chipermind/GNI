@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REMOTE="${VM_USER}@${VM_HOST}:${VM_PATH}"
 
-echo "=== GNI Bot Creator — VM Deploy ==="
+echo "=== GNI Bot Creator â€” VM Deploy ==="
 echo "  VM: ${VM_USER}@${VM_HOST}"
 echo "  Path: ${VM_PATH}"
 echo "  Repo: ${REPO_ROOT}"
@@ -34,7 +34,7 @@ rsync -avz --delete \
   --exclude='*.pyc' \
   "$REPO_ROOT/" "$REMOTE/"
 
-# 2) whatsapp-bot is in apps/whatsapp-bot — synced by step 1 with node_modules/dist excluded
+# 2) whatsapp-bot is in apps/whatsapp-bot â€” synced by step 1 with node_modules/dist excluded
 
 echo ""
 echo "3) Running docker compose on VM..."
@@ -47,6 +47,9 @@ echo ""
 echo "4) Waiting for API health (max 120s)..."
 for i in $(seq 1 24); do
   if ssh "${VM_USER}@${VM_HOST}" "curl -sf http://localhost:8000/health" 2>/dev/null; then
+    echo ""
+    echo "5) Desk24H smoke (compose dry-run)..."
+    ssh "${VM_USER}@${VM_HOST}" "cd ${VM_PATH} && docker compose exec -T api python -m desk.scheduler --dry-run --type PANORAMA_0900 --compose 2>/dev/null" || echo "Desk smoke skipped"
     echo ""
     echo "=== Deploy complete ==="
     echo "  API health: OK"
