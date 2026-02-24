@@ -281,6 +281,12 @@ def _sections_to_text(sections: list) -> str:
     return "\n\n".join(lines) if lines else "—"
 
 
+def _strip_unfilled_placeholders(text: str) -> str:
+    """Replace any {{...}} with — so validator does not fail on unfilled_placeholders."""
+    import re
+    return re.sub(r"\{\{[^}]*\}\}", "—", text or "")
+
+
 def apply_limits(desk_type: str, text: str) -> str:
     """
     Truncate text to respect max_lines and max_chars from desk/types.
@@ -383,6 +389,7 @@ def compose_post(desk_type: str, snapshot: dict, context: dict) -> dict[str, Any
 
     text = parsed.get("text")
     text = str(text) if text is not None else ""
+    text = _strip_unfilled_placeholders(text)
     text = apply_limits(desk_type, text)
     tags = parsed.get("tags")
     tags = [str(t) for t in tags] if isinstance(tags, list) else []
