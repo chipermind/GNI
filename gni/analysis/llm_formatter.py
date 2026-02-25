@@ -126,11 +126,12 @@ Fill each section with content derived from the radar inputs. Skip sections with
 
 
 def _static_fallback(radar_data: dict[str, Any]) -> str:
-    """Deterministic fallback when LLM fails. Telegram-safe."""
-    geo = (radar_data.get("geopolitics") or "").strip() or "—"
-    cyber = (radar_data.get("cyber") or "").strip() or "—"
-    crypto = (radar_data.get("crypto") or "").strip() or "—"
-    ai = (radar_data.get("ai") or "").strip() or "—"
+    """Deterministic fallback when LLM fails. Telegram-safe. Empty sections get short placeholder."""
+    _empty = "Monitoring. No new signal."
+    geo = (radar_data.get("geopolitics") or "").strip() or _empty
+    cyber = (radar_data.get("cyber") or "").strip() or _empty
+    crypto = (radar_data.get("crypto") or "").strip() or _empty
+    ai = (radar_data.get("ai") or "").strip() or _empty
 
     return f"""---------------------------------------------------
 🌐 GLOBAL NEWS INTEL (GNI)
