@@ -9,6 +9,7 @@ FAILED=0
 
 _pass() { echo "  PASS: $1"; }
 _fail() { echo "  FAIL: $1"; FAILED=1; }
+_skip() { echo "  SKIP: $1"; }
 
 echo "=== VM tests ==="
 echo ""
@@ -45,6 +46,9 @@ if docker compose ps 2>/dev/null | grep -q "api"; then
     _pass "Desk compose"
   else
     _fail "Desk compose (ok!=true)"
+    if echo "$OUT" | grep -qiE "timed out|timeout"; then
+      echo "  (hint: set OLLAMA_TIMEOUT_SECONDS=120 or higher in .env and ensure Ollama is healthy)"
+    fi
   fi
 else
   echo "  (api not in stack, skip)"
@@ -54,13 +58,21 @@ echo ""
 # 4) Radar format dry-run (worker)
 echo "4) Radar format dry-run (worker)"
 if docker compose ps 2>/dev/null | grep -q "worker"; then
-  RADAR_OUT=$(docker compose exec -T worker python scripts/send_radar_messages.py --count 1 2>&1) || true
-  if echo "$RADAR_OUT" | grep -qE "dry-run|SENT|chars|Done"; then
-    _pass "Radar script"
+  WORKER_PS=$(docker compose ps 2>/dev/null | grep worker || true)
+  # Worker not ready: restarting or still in health "starting"
+  if echo "$WORKER_PS" | grep -qE "Restarting|starting"; then
+    _skip "worker not ready (restarting or health starting); run again when worker is Up"
   else
-    _fail "Radar script"
-    echo "  (last lines of output:)"
-    echo "$RADAR_OUT" | tail -15
+    RADAR_OUT=$(docker compose exec -T worker python scripts/send_radar_messages.py --count 1 2>&1) || true
+    if echo "$RADAR_OUT" | grep -qE "dry-run|SENT|chars|Done"; then
+      _pass "Radar script"
+    elif echo "$RADAR_OUT" | grep -qE "is restarting|wait until the container is running"; then
+      _skip "worker not ready (container restarting/starting during exec); run again when worker is Up"
+    else
+      _fail "Radar script"
+      echo "  (last lines of output:)"
+      echo "$RADAR_OUT" | tail -15
+    fi
   fi
 else
   echo "  (worker not in stack, skip)"

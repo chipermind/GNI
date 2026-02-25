@@ -19,7 +19,7 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rs
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.3"))
 OLLAMA_MAX_TOKENS = int(os.environ.get("OLLAMA_MAX_TOKENS", "600"))
-OLLAMA_TIMEOUT_SECONDS = int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "30"))
+OLLAMA_TIMEOUT_SECONDS = int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "120"))
 DESK24H_EVIDENCE_CONFIDENCE_MIN = float(os.environ.get("DESK24H_EVIDENCE_CONFIDENCE_MIN", "0.65"))
 
 
