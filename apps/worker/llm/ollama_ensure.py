@@ -10,7 +10,7 @@ from typing import Optional
 
 import httpx
 
-from apps.shared.env_helpers import parse_int
+from apps.shared.env_helpers import get_int_env, parse_int
 from apps.worker.llm.ollama_client import OLLAMA_BASE_URL_DEFAULT
 
 logger = logging.getLogger(__name__)
