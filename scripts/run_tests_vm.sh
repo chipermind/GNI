@@ -62,12 +62,14 @@ if docker compose ps 2>/dev/null | grep -q "worker"; then
   # Worker not ready: restarting or still in health "starting"
   if echo "$WORKER_PS" | grep -qE "Restarting|starting"; then
     _skip "worker not ready (restarting or health starting); run again when worker is Up"
+    echo "  (see logs: bash scripts/vm_logs.sh)"
   else
     RADAR_OUT=$(docker compose exec -T worker python scripts/send_radar_messages.py --count 1 2>&1) || true
     if echo "$RADAR_OUT" | grep -qE "dry-run|SENT|chars|Done"; then
       _pass "Radar script"
     elif echo "$RADAR_OUT" | grep -qE "is restarting|wait until the container is running"; then
       _skip "worker not ready (container restarting/starting during exec); run again when worker is Up"
+      echo "  (see logs: bash scripts/vm_logs.sh)"
     else
       _fail "Radar script"
       echo "  (last lines of output:)"
