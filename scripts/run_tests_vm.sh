@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Quick VM smoke: containers, API health, desk dry-run, radar dry-run.
-# Run ON THE VM: cd /opt/gni-bot-creator && bash scripts/run_tests_vm.sh
+# Run ON THE VM HOST: cd /opt/gni-bot-creator && bash scripts/run_tests_vm.sh
+# If "No such file or directory": run  git pull origin main  first so the repo has this script.
 set -e
 
 cd "$(dirname "$0")/.."
@@ -53,10 +54,13 @@ echo ""
 # 4) Radar format dry-run (worker)
 echo "4) Radar format dry-run (worker)"
 if docker compose ps 2>/dev/null | grep -q "worker"; then
-  if docker compose exec -T worker python scripts/send_radar_messages.py --count 1 2>&1 | grep -qE "dry-run|SENT|chars"; then
+  RADAR_OUT=$(docker compose exec -T worker python scripts/send_radar_messages.py --count 1 2>&1) || true
+  if echo "$RADAR_OUT" | grep -qE "dry-run|SENT|chars|Done"; then
     _pass "Radar script"
   else
     _fail "Radar script"
+    echo "  (last lines of output:)"
+    echo "$RADAR_OUT" | tail -15
   fi
 else
   echo "  (worker not in stack, skip)"
