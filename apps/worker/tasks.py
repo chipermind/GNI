@@ -25,7 +25,7 @@ from sqlalchemy import func
 
 from apps.api.db import SessionLocal, init_db
 from apps.shared.config import ConfigError, validate_config
-from apps.shared.env_helpers import parse_int
+from apps.shared.env_helpers import get_int_env, parse_int
 from apps.shared.env_validation import EnvValidationError, validate_env
 from apps.api.db.models import DeadLetterQueue, Draft, EventsLog, Item, Publication
 from apps.api.settings import get_settings

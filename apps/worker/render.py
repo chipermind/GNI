@@ -5,7 +5,7 @@ Message splitting for WhatsApp when text exceeds WHATSAPP_MAX_CHARS (default 350
 import os
 from typing import Any, Optional
 
-from apps.shared.env_helpers import parse_int
+from apps.shared.env_helpers import get_int_env, parse_int
 
 # WhatsApp-safe: configurable max chars (default 3500)
 WHATSAPP_MAX_CHARS = get_int_env("WHATSAPP_MAX_CHARS", default=3500)

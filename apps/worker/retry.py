@@ -7,7 +7,7 @@ import os
 import time
 from typing import Callable, TypeVar
 
-from apps.shared.env_helpers import parse_int
+from apps.shared.env_helpers import get_int_env, parse_int
 
 T = TypeVar("T")
 
