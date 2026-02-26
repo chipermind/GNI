@@ -39,7 +39,8 @@ TELEGRAM_TARGET_CHAT_ID=-1002698141517
 TELEGRAM_API_ID=32126246
 TELEGRAM_API_HASH=be39b3030639d1224becdcf54fa22a0f
 TELETHON_SESSION_PATH=/data/telethon/session
-TELEGRAM_SOURCES=Euro Intel Mais:-1002281264507,Coin Sauce:-1001535764422,Bellum Acta:-1001161666782,Tabz:-1001950487092
+# Add more channels (e.g. Frontline Report): see docs/ADD_TELEGRAM_CHANNEL.md
+TELEGRAM_SOURCES=Euro Intel Mais:-1002281264507,Coin Sauce:-1001535764422,Bellum Acta:-1001161666782,Tabz:-1001950487092,Frontline Report:CHAT_ID
 
 # Publicar de verdade
 DRY_RUN=0
@@ -76,9 +77,13 @@ Adicione o bot ao grupo **Global News Intel** (menu do grupo → Adicionar membr
 
 ## 5. Na VM — fontes Telegram (se ainda não fez)
 
+Replace `CHAT_ID` in `.env` (TELEGRAM_SOURCES) with the real Frontline Report chat_id (get it: forward a message to @userinfobot). Then:
+
 ```bash
-docker compose exec -e TELEGRAM_SOURCES="Euro Intel Mais:-1002281264507,Coin Sauce:-1001535764422,Bellum Acta:-1001161666782,Tabz:-1001950487092" collector python scripts/add_telegram_sources.py
+docker compose exec collector python scripts/add_telegram_sources.py
 ```
+
+(See docs/ADD_TELEGRAM_CHANNEL.md to add any Telegram channel.)
 
 ---
 
