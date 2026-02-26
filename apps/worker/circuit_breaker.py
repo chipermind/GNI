@@ -16,7 +16,17 @@ T = TypeVar("T")
 
 # Config
 FAILURE_THRESHOLD = get_int_env("CIRCUIT_FAILURE_THRESHOLD", default=5)
-RECOVERY_TIMEOUT = float(os.environ.get("CIRCUIT_RECOVERY_TIMEOUT", "60.0"))
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+RECOVERY_TIMEOUT = _float_env("CIRCUIT_RECOVERY_TIMEOUT", 60.0)
 
 
 class CircuitState(str, Enum):

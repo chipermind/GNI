@@ -12,7 +12,19 @@ from apps.shared.env_helpers import get_int_env, parse_int
 T = TypeVar("T")
 
 PUBLISH_MAX_ATTEMPTS = get_int_env("PUBLISH_MAX_ATTEMPTS", default=3)
-BACKOFF_BASE = float(os.environ.get("PUBLISH_BACKOFF_BASE") or "1.0")
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+BACKOFF_BASE = _float_env("PUBLISH_BACKOFF_BASE", 1.0)
 
 # Import for "no retry" check; avoid circular import
 def _is_circuit_open(e: Exception) -> bool:
