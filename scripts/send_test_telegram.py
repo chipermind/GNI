@@ -26,29 +26,27 @@ _repo = Path(__file__).resolve().parent.parent
 if str(_repo) not in sys.path:
     sys.path.insert(0, str(_repo))
 
-# Same structure as render.py Template A
-TEST_MESSAGE = """🚨 GNI — Análise de Inteligência
+# Formato oficial GNI (Desk de Inteligência Estratégica)
+TEST_MESSAGE = """🌐 GLOBAL NEWS INTEL (GNI)
 
-Tema:
-[TEST] Verificação de fluxo e formato — GNI Bot
+🧠 Desk de Inteligência Estratégica
 
-Leitura rápida
-	• Teste de envio
-	• Canal Telegram
-	• Formato correto
+Boa noite, operadores.
 
-Por que isso importa
-	• Validar pipeline
-	• Confirmar que mensagens chegam ao canal
+[TEST] Verificação de fluxo e formato — GNI Bot.
 
-Como validar (checklist OSINT)
-	• ✅ Mensagem recebida no Global News Intel
-	• ✅ Formatação igual aos posts normais
+🔎 Radar Ativo
+* Teste de envio
+* Canal Telegram
+* Formato correto
 
-Insight central
+📊 Leitura GNI
 Mensagem de teste. Se você vê isto, o fluxo está OK e o formato está correto.
 
-⸻"""
+📡 Atualizações estratégicas a qualquer momento.
+Fiquem atentos.
+
+— Equipe GNI"""
 
 
 def main() -> int:

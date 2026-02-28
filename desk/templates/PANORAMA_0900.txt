@@ -1,19 +1,15 @@
-📋 PANORAMA | 09:00
+📋 PANORAMA ESTRATÉGICO | 09:00
 
 {{HEADLINE}}
 
-📊 Markets
-{{MARKETS_BLOCK}}
-
-📰 Intel
+🔎 Radar Ativo
+* 🌍 Geopolítica crítica
+* 🛡️ Cyber relevante
+* 🤖 IA / Big Tech
+* 💰 Macro / Cripto
 {{INTEL_BLOCK}}
 
-{{FLOW_BLOCK}}
-
-{{RISK_BLOCK}}
-
-📌 {{READING_BLOCK}}
-
-Assumptions (if X then Y): {{ASSUMPTIONS_BLOCK}}
+📊 Leitura GNI
+{{READING_BLOCK}}
 
 {{FOOTER}}

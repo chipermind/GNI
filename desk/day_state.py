@@ -213,7 +213,7 @@ def _build_exec_closure_text(
 ) -> str:
     """Build Telegram-friendly exec closure text. Max lines, omit empty sections."""
     lines: list[str] = []
-    lines.append(f"🧭 EXEC 20:30 — {day_str}")
+    lines.append(f"🧭 FECHAMENTO GNI 21:00 — {day_str}")
     lines.append("")
     if confirmed:
         lines.append("✅ Confirmou")

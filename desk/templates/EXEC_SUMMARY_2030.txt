@@ -1,14 +1,12 @@
-📌 EXEC SUMMARY | 20:30
+🕘 FECHAMENTO GNI | 21:00
 
-{{HEADLINE}}
+Resumo executivo. Curto. Autoritário. Sem exagero.
 
+🔎 Radar Ativo
+* O que confirmou | O que mudou | O que observar amanhã
 {{RISK_BLOCK}}
 
-📊 Markets
-{{MARKETS_BLOCK}}
-
-{{INTEL_BLOCK}}
-
-📌 {{READING_BLOCK}}
+📊 Leitura GNI
+{{READING_BLOCK}}
 
 {{FOOTER}}

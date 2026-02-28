@@ -31,17 +31,14 @@ _TIMEZONE = "America/Recife"
 _scheduler: "BackgroundScheduler | None" = None
 
 # Cron mapping: desk_type -> (hour, minute) America/Recife
+# Rotina diária GNI: 05:00 Mercados | 09:00 Panorama | 12:00 Alerta (se relevante) | 15:00 Fluxo | 18:00 Matriz Risco | 21:00 Fechamento
 _CRON_MAP = {
-    "OVERNIGHT_GLOBAL_0500": (5, 0),
-    "PREMARKET_BR_0800": (8, 0),
-    "PANORAMA_0900": (9, 0),
-    "THREAT_MONITOR_1130": (11, 30),
-    "ALERTA_TATICO_1200": (12, 0),
-    "FLOW_1330": (13, 30),
-    "REALTIME_VOL_1530": (15, 30),
-    "RISK_MATRIX_1800": (18, 0),
-    "EXEC_SUMMARY_2030": (20, 30),
-    "OVERNIGHT_WATCH_2300": (23, 0),
+    "OVERNIGHT_GLOBAL_0500": (5, 0),   # 🕔 MERCADOS GLOBAIS (ABERTURA)
+    "PANORAMA_0900": (9, 0),           # 🕘 PANORAMA ESTRATÉGICO
+    "ALERTA_TATICO_1200": (12, 0),     # 🕛 ALERTA TÁTICO (somente se houver movimento relevante)
+    "FLOW_1330": (15, 0),              # 🕒 FLUXO & DINHEIRO
+    "RISK_MATRIX_1800": (18, 0),       # 🕕 MATRIZ DE RISCO
+    "EXEC_SUMMARY_2030": (21, 0),      # 🕘 FECHAMENTO GNI
 }
 
 
@@ -193,7 +190,11 @@ def run_window(desk_type: str) -> dict[str, Any]:
         logger.warning("run_window %s compose failed: %s", desk_type, e)
         return summary
 
-    post = {"type": desk_type, "text": result["text"], "meta": result.get("meta", {})}
+    # Formato unificado GNI para Telegram (resumo em português)
+    from desk.gni_format import format_gni_desk_post
+    formatted_text = format_gni_desk_post(desk_type, result["text"])
+
+    post = {"type": desk_type, "text": formatted_text, "meta": result.get("meta", {})}
     packs = context.get("evidence_pack")
     ok, reason = validate(post, prev_texts=prev_texts, packs=packs)
     if not ok and packs and (reason == "evidence_missing_section_not_placeholder" or reason == "evidence_gate_failed_reading_insight"):
@@ -205,9 +206,23 @@ def run_window(desk_type: str) -> dict[str, Any]:
             ok, reason = True, ""
             result["text"] = post["text"]
             logger.info("run_window %s injected placeholder for empty evidence", desk_type)
+
+    # Alerta 12:00 — só enviar se houver movimento relevante. Silêncio também transmite controle.
+    skip_send_alerta = False
+    if desk_type == "ALERTA_TATICO_1200" and ok:
+        t = (result.get("text") or "").lower()
+        if any(x in t for x in ("sem movimento relevante", "não postar", "silêncio", "nada crítico")):
+            skip_send_alerta = True
+            logger.info("run_window ALERTA_TATICO_1200: sem movimento relevante — não postar")
+        elif isinstance(result.get("confidence"), (int, float)) and float(result["confidence"]) < 0.4:
+            skip_send_alerta = True
+            logger.info("run_window ALERTA_TATICO_1200: confidence baixa — não postar")
     if not ok:
         summary["reason"] = reason
         logger.info("run_window %s validation failed: %s", desk_type, reason)
+
+    # Para day_state usar o texto composto (sem envelope), para publicação usar o formatado
+    result["text"] = formatted_text
 
     payload_hash = hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
     init_db()
@@ -222,6 +237,8 @@ def run_window(desk_type: str) -> dict[str, Any]:
     meta["dry_run"] = dry_run
     if not ok:
         meta["validation_failed"] = reason
+    if skip_send_alerta:
+        meta["no_send_reason"] = "alerta_sem_movimento_relevante"
     try:
         save_post(desk_type, result["text"], meta=meta, snapshot_id=snapshot_id)
     except Exception as e:
@@ -236,7 +253,7 @@ def run_window(desk_type: str) -> dict[str, Any]:
     except Exception as e:
         logger.warning("run_window %s update_and_persist failed: %s", desk_type, e)
 
-    if ok and not dry_run:
+    if ok and not dry_run and not skip_send_alerta:
         try:
             from apps.publisher.gni_sender import gni_send
             send_result = gni_send(result["text"], meta=meta, dry_run=False)

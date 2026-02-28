@@ -1,12 +1,13 @@
-🌊 FLOW | 13:30
+🕒 FLUXO & DINHEIRO | 15:00
 
 {{HEADLINE}}
 
-📊 Markets
+🔎 Radar Ativo
+* Fluxo institucional | ETFs | Funding cripto | Liquidações | Commodities
 {{MARKETS_BLOCK}}
-
 {{FLOW_BLOCK}}
 
-{{INTEL_BLOCK}}
+📊 Leitura GNI
+{{READING_BLOCK}}
 
 {{FOOTER}}

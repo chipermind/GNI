@@ -1,14 +1,13 @@
-📉 RISK MATRIX | 18:00
+🕕 MATRIZ DE RISCO | 18:00
 
 {{HEADLINE}}
 
+🔎 Radar Ativo
+* Risco Alto | Risco Moderado | Risco Latente
+* O que pode acontecer nas próximas 24–72h
 {{RISK_BLOCK}}
 
-📊 Markets
-{{MARKETS_BLOCK}}
-
-{{INTEL_BLOCK}}
-
-{{FLOW_BLOCK}}
+📊 Leitura GNI
+{{READING_BLOCK}}
 
 {{FOOTER}}
