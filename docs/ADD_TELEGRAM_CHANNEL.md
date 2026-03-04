@@ -18,7 +18,7 @@ No arguments needed: the script adds **Frontline Report** by username `frontline
 
 ## Manual: any channel (get chat_id first)
 
-## 1. Get the channel chat_id
+### 1. Get the channel chat_id
 
 - **Option A:** Forward any message from the channel to **@userinfobot** in Telegram. The bot replies with the chat ID (e.g. `-1001991611234`).
 - **Option B:** On the VM, run (after Telethon session is set up):

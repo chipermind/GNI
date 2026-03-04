@@ -1,7 +1,8 @@
 """
 LLM-driven strategic intelligence report formatter.
 Takes structured radar inputs, calls OpenAI-compatible LLM, returns Telegram-ready string.
-Deterministic fallback on failure. 30-min cache. No modification to Telegram client.
+Supports format_mode: BRIEFING_LONG (default), RADAR_SHORT, FLASH_BREAKING — each loads
+the corresponding contract from gni/templates/. Deterministic fallback on failure. 30-min cache.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 try:
@@ -19,6 +21,15 @@ except ImportError:
 
 from apps.worker.cache import cache_get, cache_set
 from apps.shared.env_helpers import get_int_env
+
+from gni.templates import (
+    DEFAULT_FORMAT_MODE,
+    FORMAT_MODE_BRIEFING_LONG,
+    FORMAT_MODE_FLASH_BREAKING,
+    FORMAT_MODE_RADAR_SHORT,
+    get_template_path as _get_template_path,
+    load_template as _load_gni_template,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +52,14 @@ Rules:
 - Output EXACTLY the format specified — no extra text before or after"""
 
 
-def _radar_hash(radar_data: dict[str, Any]) -> str:
-    """Deterministic hash for cache key."""
-    canonical = json.dumps(radar_data, sort_keys=True)
+def _radar_hash(radar_data: dict[str, Any], format_mode: str) -> str:
+    """Deterministic hash for cache key (includes format_mode so formats don't share cache)."""
+    canonical = json.dumps({"radar": radar_data, "format_mode": format_mode}, sort_keys=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _build_user_prompt(radar_data: dict[str, Any]) -> str:
-    """Build user prompt from radar inputs."""
+    """Build user prompt from radar inputs (normalized news/radar)."""
     sections = []
     labels = [
         ("geopolitics", "🌍 Geopolitics"),
@@ -64,6 +75,23 @@ def _build_user_prompt(radar_data: dict[str, Any]) -> str:
     if not sections:
         sections.append("No specific radar inputs. Provide a brief situational awareness summary.")
     return "\n\n---\n\n".join(sections)
+
+
+def _build_user_prompt_with_day_data(radar_data: dict[str, Any]) -> str:
+    """Build full user prompt: dados do dia + notícias/radar normalizados (for template contract)."""
+    now = datetime.now(timezone.utc)
+    # Locale-agnostic for LLM: weekday name, DD MMM YYYY, HHhMM
+    dia = now.strftime("%A")  # Monday, Tuesday...
+    date_str = now.strftime("%d %b %Y")  # 04 Mar 2025
+    time_str = now.strftime("%Hh%M")  # 14h30
+    day_block = (
+        "=== Dados do dia ===\n"
+        f"Dia da semana: {dia}\n"
+        f"Data: {date_str}\n"
+        f"Hora (UTC): {time_str}\n"
+    )
+    radar_block = "=== Notícias / Radar normalizados ===\n" + _build_user_prompt(radar_data)
+    return day_block + "\n" + radar_block
 
 
 def _output_format_instruction() -> str:
@@ -186,10 +214,47 @@ Environment under observation. Key vectors monitored. No actionable signal at th
 ---------------------------------------------------"""
 
 
-def _call_llm(user_prompt: str, base_url: str, model: str, api_key: str | None) -> tuple[str | None, dict[str, Any]]:
+def _static_fallback_short(radar_data: dict[str, Any]) -> str:
+    """Minimal fallback for RADAR_SHORT when LLM fails."""
+    _empty = "Sem sinal novo."
+    geo = (radar_data.get("geopolitics") or "").strip() or _empty
+    return f"""🌐 GLOBAL NEWS INTEL (GNI) — Desk (fallback)
+
+🔎 Radar Ativo
+• {geo[:150]}{"..." if len(geo) > 150 else ""}
+
+📌 Leitura GNI
+Monitoramento ativo. Nenhum sinal acionável no momento.
+
+— Equipe GNI"""
+
+
+def _static_fallback_flash(radar_data: dict[str, Any]) -> str:
+    """Minimal fallback for FLASH_BREAKING when LLM fails."""
+    _empty = "Sem detalhes."
+    geo = (radar_data.get("geopolitics") or "").strip() or _empty
+    return f"""🚨 GNI — FLASH
+• {geo[:120]}{"..." if len(geo) > 120 else ""}
+• Contexto em monitoramento.
+• Implicação: a avaliar.
+
+📌 Impacto
+Impacto operacional em avaliação. Horizonte 24–48h.
+
+"""
+
+
+def _call_llm(
+    user_prompt: str,
+    base_url: str,
+    model: str,
+    api_key: str | None,
+    format_instruction: str | None = None,
+) -> tuple[str | None, dict[str, Any]]:
     """
     Call OpenAI-compatible chat completions. Returns (content, usage_info).
-    usage_info: prompt_tokens, completion_tokens, latency_sec. Never includes API key.
+    format_instruction: template/contract content (anti-drift rules). If None, uses legacy
+    _output_format_instruction() for backward compatibility.
     """
     if not httpx:
         return None, {"error": "httpx not installed"}
@@ -206,10 +271,11 @@ def _call_llm(user_prompt: str, base_url: str, model: str, api_key: str | None) 
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    system_content = SYSTEM_PROMPT + (format_instruction or _output_format_instruction())
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT + _output_format_instruction()},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": RADAR_TEMPERATURE,
@@ -247,28 +313,71 @@ def _call_llm(user_prompt: str, base_url: str, model: str, api_key: str | None) 
     return content if content else None, usage_info
 
 
-def generate_report(radar_data: dict[str, Any]) -> str:
+def generate_report(
+    radar_data: dict[str, Any],
+    format_mode: str | None = None,
+) -> str:
     """
     Generate LLM-driven strategic intelligence report from radar inputs.
+
+    format_mode: One of BRIEFING_LONG, RADAR_SHORT, FLASH_BREAKING. When not provided,
+    uses DEFAULT_FORMAT_MODE (BRIEFING_LONG) so existing callers and scheduler stay unchanged.
+    Each mode loads the corresponding contract from gni/templates/ (template + anti-drift rules).
+    The prompt sent to the LLM is: template + dados do dia + notícias normalizadas.
+
     Returns single Telegram-ready string. Falls back to static format on failure.
-    Cache: 30 min for identical radar input.
+    Cache: 30 min per (radar_data, format_mode).
     """
     if not radar_data or not isinstance(radar_data, dict):
-        return _static_fallback({})
+        radar_data = {}
+    mode = (format_mode or DEFAULT_FORMAT_MODE).strip().upper()
+    if mode not in (FORMAT_MODE_BRIEFING_LONG, FORMAT_MODE_RADAR_SHORT, FORMAT_MODE_FLASH_BREAKING):
+        mode = DEFAULT_FORMAT_MODE
 
-    cache_key = RADAR_CACHE_PREFIX + _radar_hash(radar_data)
+    cache_key = RADAR_CACHE_PREFIX + _radar_hash(radar_data, mode)
     cached = cache_get(cache_key)
     if cached:
         logger.info("radar_report_cache_hit key=%s", cache_key[:24])
         return cached
 
+    # Load contract template (includes anti-drift rules)
+    try:
+        template_content = _load_gni_template(mode)
+        template_path = _get_template_path(mode)
+    except (ValueError, FileNotFoundError) as e:
+        logger.warning("gni_template_load_failed format_mode=%s error=%s", mode, e)
+        if mode == FORMAT_MODE_BRIEFING_LONG:
+            template_content = None  # use legacy _output_format_instruction()
+            template_path = None
+        else:
+            template_path = None
+            fallback = (
+                _static_fallback_short(radar_data)
+                if mode == FORMAT_MODE_RADAR_SHORT
+                else _static_fallback_flash(radar_data)
+            )
+            return fallback
+
+    user_prompt = _build_user_prompt_with_day_data(radar_data)
+    format_instruction = template_content if template_content else None
     ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
     base_url = os.environ.get("RADAR_LLM_BASE_URL") or (ollama_base + "/v1")
     model = os.environ.get("RADAR_LLM_MODEL") or os.environ.get("OLLAMA_MODEL", "llama3.2")
     api_key = os.environ.get("RADAR_LLM_API_KEY") or None
 
-    user_prompt = _build_user_prompt(radar_data)
-    content, usage_info = _call_llm(user_prompt, base_url, model, api_key)
+    content, usage_info = _call_llm(
+        user_prompt, base_url, model, api_key, format_instruction=format_instruction
+    )
+
+    # DEBUG: format_mode, template_path, size of final prompt (system + user) and response
+    prompt_len = len(SYSTEM_PROMPT) + len(format_instruction or _output_format_instruction()) + len(user_prompt)
+    logger.debug(
+        "format_mode=%s template_path=%s prompt_len=%s response_len=%s",
+        mode,
+        str(template_path) if template_path else "legacy",
+        prompt_len,
+        len(content) if content else 0,
+    )
 
     if content and len(content) > 50:
         cache_set(cache_key, content, ttl=RADAR_CACHE_TTL)
@@ -281,6 +390,9 @@ def generate_report(radar_data: dict[str, Any]) -> str:
         return content
 
     reason = usage_info.get("error", "empty_or_short_response")
-    logger.warning("radar_llm_fallback reason=%s fallback=static", reason)
-    fallback = _static_fallback(radar_data)
-    return fallback
+    logger.warning("radar_llm_fallback reason=%s fallback=static format_mode=%s", reason, mode)
+    if mode == FORMAT_MODE_RADAR_SHORT:
+        return _static_fallback_short(radar_data)
+    if mode == FORMAT_MODE_FLASH_BREAKING:
+        return _static_fallback_flash(radar_data)
+    return _static_fallback(radar_data)

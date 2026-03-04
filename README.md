@@ -355,6 +355,26 @@ python scripts/simulate_news.py
 
 Checks Template A (ANALISE_INTEL), Template B (FLASH_SETORIAL), and Make webhook payload spec. On Windows use `set PYTHONIOENCODING=utf-8` first if you see encoding errors.
 
+### GNI preview (format + splitter, no Telegram)
+
+Validate editorial format, guard, and LONG splitter locally without sending. Dry-run (default) prints: `format_mode`, guard result (pass/fail), and for LONG the number of chunks and each chunk with a clear separator. Optionally send to a **test channel** with `--send` (requires `TELEGRAM_TEST_CHAT_ID`; script exits with error if unset — safe).
+
+**Quick commands:**
+
+```bash
+# 1 LONG (dry-run: guard + chunks count + chunks with separator)
+python scripts/gni_preview.py --mode LONG
+
+# 2 SHORT (dry-run)
+python scripts/gni_preview.py --mode SHORT
+python scripts/gni_preview.py --job-name radar_interval
+
+# Send to test channel (only when TELEGRAM_TEST_CHAT_ID is set)
+python scripts/gni_preview.py --mode SHORT --send
+```
+
+**Flags:** `--mode LONG|SHORT|FLASH`, `--job-name briefing_0900|radar_interval|intel_flash|...`, `--dry-run` (default: true), `--send`. Safe: without `TELEGRAM_TEST_CHAT_ID`, `--send` does not send and exits with error.
+
 ### Flux E2E Verification
 
 Runs **on the VM** (or locally). One command to confirm the VM is production-ready:
