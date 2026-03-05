@@ -1,0 +1,54 @@
+reason=unknown_format_mode_'LONG'
+format_mode=LONG
+---
+---------------------------------------------------
+🌐 GLOBAL NEWS INTEL (GNI)
+🧠 Strategic Intelligence Desk
+
+🕒 Time Horizon: 48–72h
+📍 Volatility Level: Elevated
+🧭 Strategic Posture: Repositioning Phase
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+🔎 ACTIVE RADAR
+
+🌍 Geopolitics
+• Summary: Preview run. Sem dados externos.
+• Strategic Implication: Monitoring.
+• Risk Level: Moderate
+• Time Horizon: 72h
+• Secondary Effects: TBD
+
+🛡️ Cyber Activity
+• Summary: Monitoring. No new signal.
+• Strategic Implication: Monitoring.
+• Risk Level: Moderate
+• Time Horizon: 72h
+• Secondary Effects: TBD
+
+💰 Institutional Flows
+• Summary: Monitoring. No new signal.
+• Strategic Implication: Monitoring.
+• Risk Level: Moderate
+• Time Horizon: 72h
+• Secondary Effects: TBD
+
+🤖 AI & Tech Acceleration
+• Summary: Monitoring. No new signal.
+• Strategic Implication: Monitoring.
+• Risk Level: Moderate
+• Time Horizon: 72h
+• Secondary Effects: TBD
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📊 GNI STRATEGIC READ
+
+Environment under observation. Key vectors monitored. No actionable signal at this time. Maintain awareness.
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📡 Monitoring Status: Active
+— GNI Intelligence Unit
+---------------------------------------------------

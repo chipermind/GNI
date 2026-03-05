@@ -202,5 +202,5 @@ volumes:
   telethon_data:
 
 networks:
-  internal:
+  gni-net:
     driver: bridge
