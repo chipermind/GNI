@@ -72,21 +72,69 @@ def _snapshot_to_radar_data(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {k: v.strip() for k, v in out.items() if v.strip()}
 
 
+def _load_radar_data_from_db(limit: int = 25) -> dict[str, Any]:
+    """Fallback: build radar_data from recent items in DB (collector pipeline)."""
+    try:
+        from apps.api.db import SessionLocal, init_db
+        from apps.api.db.models import Item
+
+        init_db()
+        session = SessionLocal()
+        try:
+            rows = (
+                session.query(Item)
+                .filter(Item.title.isnot(None), Item.title != "")
+                .order_by(Item.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+        finally:
+            session.close()
+
+        if not rows:
+            return {}
+        out: dict[str, str] = {
+            "geopolitics": "",
+            "cyber": "",
+            "crypto": "",
+            "ai": "",
+            "energy": "",
+        }
+        for item in rows:
+            title = (item.title or "").strip()
+            if not title:
+                continue
+            source = (getattr(item, "source_name", None) or "").strip()
+            line = f"• {title}"
+            if source:
+                line += f" ({source})"
+            out["geopolitics"] += ("\n" if out["geopolitics"] else "") + line
+        return {k: v.strip() for k, v in out.items() if v.strip()}
+    except Exception as e:
+        logger.debug("load_radar_data_from_db failed: %s", e)
+        return {}
+
+
 def load_radar_data() -> dict[str, Any]:
     """
-    Load news the current way: get_latest_raw -> build_snapshot -> radar_data.
+    Load news: get_latest_raw -> build_snapshot -> radar_data; if empty, fallback to recent items from DB.
     Returns dict with keys geopolitics, cyber, crypto, ai, energy (strings).
     """
     raw = _get_latest_raw()
-    if not raw:
-        return {}
-    try:
-        from desk.snapshot import build_snapshot
-        snapshot = build_snapshot("run_once", raw, prev_snapshot=None)
-        return _snapshot_to_radar_data(snapshot)
-    except Exception as e:
-        logger.warning("load_radar_data snapshot failed: %s", e)
-        return {}
+    if raw:
+        try:
+            from desk.snapshot import build_snapshot
+            snapshot = build_snapshot("run_once", raw, prev_snapshot=None)
+            data = _snapshot_to_radar_data(snapshot)
+            if data:
+                return data
+        except Exception as e:
+            logger.warning("load_radar_data snapshot failed: %s", e)
+
+    data = _load_radar_data_from_db()
+    if data:
+        logger.info("radar_data loaded from DB (fallback)")
+    return data
 
 
 def main() -> int:
