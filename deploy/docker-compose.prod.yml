@@ -1,6 +1,6 @@
 # Production VM deployment — required services only, named volumes, healthchecks.
-# Run from repo root: docker compose -f deploy/docker-compose.prod.yml --project-directory . up -d
-# Build context is repo root (.. relative to deploy/).
+# Run from repo root: cd /opt/gni-bot-creator && docker compose -f deploy/docker-compose.prod.yml --project-directory . up -d
+# Build context and env_file are relative to project-directory (repo root). Use context: . so /opt/apps/worker is not used.
 
 services:
   postgres:
@@ -52,7 +52,7 @@ services:
   # /wa/status, /wa/qr, /wa/connect protected by X-API-Key (API_KEY); usable from internal network (e.g. wa-qr-ui) with same key.
   api:
     build:
-      context: ..
+      context: .
       dockerfile: apps/api/Dockerfile
     ports:
       - "0.0.0.0:${API_PORT:-8000}:8000"
@@ -82,7 +82,7 @@ services:
 
   collector:
     build:
-      context: ..
+      context: .
       dockerfile: apps/collector/Dockerfile
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-gni}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gni}
@@ -106,7 +106,7 @@ services:
 
   worker:
     build:
-      context: ..
+      context: .
       dockerfile: apps/worker/Dockerfile
     environment:
       PYTHONPATH: /app
@@ -138,7 +138,7 @@ services:
 
   whatsapp-bot:
     build:
-      context: ..
+      context: .
       dockerfile: apps/whatsapp-bot/Dockerfile
     ports:
       - "0.0.0.0:3100:3100"
@@ -165,7 +165,7 @@ services:
 
   wa-qr-ui:
     build:
-      context: ..
+      context: .
       dockerfile: apps/wa-qr-cloud-ui/Dockerfile
     ports:
       - "0.0.0.0:8501:8501"
