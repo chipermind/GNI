@@ -101,6 +101,35 @@ docker compose -f deploy/docker-compose.prod.yml --project-directory . build wor
 docker compose -f deploy/docker-compose.prod.yml --project-directory . up -d worker
 ```
 
+### Dois paths na VM: `/opt/gni` vs `/opt/gni-bot-creator`
+
+Use **só um** path no servidor (evita confusão). Em ambos, o compose deve ser `deploy/docker-compose.prod.yml` e a rede `gni-net` está definida no fim do ficheiro.
+
+**Se usar `/opt/gni`** (branches divergentes):
+
+```bash
+cd /opt/gni
+git fetch origin
+git checkout main
+git pull --rebase origin main
+docker compose -f deploy/docker-compose.prod.yml --project-directory . build --no-cache worker
+docker compose -f deploy/docker-compose.prod.yml --project-directory . up -d worker
+```
+
+**Se usar `/opt/gni-bot-creator`** (local changes would be overwritten, e.g. `data/gni.db`):
+
+```bash
+cd /opt/gni-bot-creator
+git fetch origin
+git checkout main
+git checkout -- data/gni.db
+git pull --rebase origin main
+docker compose -f deploy/docker-compose.prod.yml --project-directory . build --no-cache worker
+docker compose -f deploy/docker-compose.prod.yml --project-directory . up -d worker
+```
+
+Se ainda aparecer `undefined network gni-net`, confirme que o ficheiro no servidor tem no fim a secção `networks: gni-net:`. Se não tiver, o pull não trouxe a versão nova — force: `git fetch origin && git reset --hard origin/main`.
+
 ### `Container ... is restarting, wait until the container is running`
 
 O worker está em crash loop (por exemplo por causa do `ModuleNotFoundError: db`). Corrija o código/imports como acima, faça rebuild e `up -d worker`. Depois use `docker compose logs -f worker` para confirmar que arranca.

@@ -9,6 +9,8 @@ k8s/base/secret.yaml
 # Data and auth (mounted on VM)
 data/wa-auth/
 data/telethon/
+data/*.db
+data/gni.db
 backups/
 *.session
 *.session-journal
