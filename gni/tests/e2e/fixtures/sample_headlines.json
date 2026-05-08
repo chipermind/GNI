@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "day_utc": "FIXTURE",
+  "last_updated_at": "2026-05-05T00:00:00Z",
+  "count": 3,
+  "items": [
+    {
+      "id": "e2e0001000000000000000000000000000000000000000000000000000000001",
+      "schema_version": 1,
+      "source_name": "TestWire Geopolitics",
+      "source_type": "rss",
+      "category": "geopolitics",
+      "tier": "tier1",
+      "title": "Breaking: emergency response activated after attack on capital",
+      "url": "https://example.invalid/geo/breaking-emergency-attack",
+      "url_synthetic": false,
+      "published_at": "2026-05-05T11:00:00Z",
+      "collected_at": "2026-05-05T11:05:00Z",
+      "raw_text": "Authorities report a breaking emergency situation following an attack.",
+      "hash_key": "e2e0001000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "id": "e2e0002000000000000000000000000000000000000000000000000000000002",
+      "schema_version": 1,
+      "source_name": "TestWire Markets",
+      "source_type": "rss",
+      "category": "markets",
+      "tier": "tier2",
+      "title": "BIST rally extends as traders eye Fed CPI release",
+      "url": "https://example.invalid/markets/bist-rally-fed-cpi",
+      "url_synthetic": false,
+      "published_at": "2026-05-05T11:02:00Z",
+      "collected_at": "2026-05-05T11:05:00Z",
+      "raw_text": "Stocks continued their rally after benign CPI prints.",
+      "hash_key": "e2e0002000000000000000000000000000000000000000000000000000000002"
+    },
+    {
+      "id": "e2e0001000000000000000000000000000000000000000000000000000000001",
+      "schema_version": 1,
+      "source_name": "TestWire Geopolitics",
+      "source_type": "rss",
+      "category": "geopolitics",
+      "tier": "tier1",
+      "title": "Breaking: emergency response activated after attack on capital",
+      "url": "https://example.invalid/geo/breaking-emergency-attack",
+      "url_synthetic": false,
+      "published_at": "2026-05-05T11:00:00Z",
+      "collected_at": "2026-05-05T11:06:00Z",
+      "raw_text": "Authorities report a breaking emergency situation following an attack.",
+      "hash_key": "e2e0001000000000000000000000000000000000000000000000000000000001"
+    }
+  ]
+}

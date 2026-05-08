@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "locale": "pt-BR",
+  "rules": {
+    "opinion": {
+      "code": "opinion_detected",
+      "description": "1st-person editorial opinion",
+      "patterns": [
+        "\\bacreditamos\\b",
+        "\\bentendemos\\b",
+        "\\bnossa\\s+vis[ãa]o\\b",
+        "\\bdevemos\\b",
+        "\\bvale\\s+(a\\s+pena|destacar|ressaltar|mencionar)\\b",
+        "\\b[ée]\\s+importante\\s+(notar|destacar|ressaltar)\\b",
+        "\\bna\\s+nossa\\s+opini[ãa]o\\b",
+        "\\binteressante\\s+notar\\b"
+      ],
+      "applies_to": ["FLASH", "ALERTA", "RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "speculation": {
+      "code": "speculation_detected",
+      "description": "Hedging / speculation language",
+      "patterns": [
+        "\\bpode(ria|m)?\\b",
+        "\\btalvez\\b",
+        "\\bparece\\b",
+        "\\bsugere(\\s+que)?\\b",
+        "\\baparentemente\\b",
+        "\\bprovavelmente\\b",
+        "\\beventualmente\\b",
+        "\\bpossivelmente\\b"
+      ],
+      "applies_to": ["FLASH", "ALERTA", "BRIEFING", "FECHAMENTO"],
+      "exempt_fields": {"RADAR": ["signal"]}
+    },
+    "hype": {
+      "code": "hype_detected",
+      "description": "Hyperbolic / sensationalist language",
+      "patterns": [
+        "\\bmassiv[oa]s?\\b",
+        "\\bsem\\s+precedentes?\\b",
+        "\\bcrucia(l|is)\\b",
+        "\\bhist[óo]ric[oa]s?\\b",
+        "\\bchocantes?\\b",
+        "\\bdram[áa]tic[oa]s?\\b",
+        "\\bestrondos[oa]s?\\b",
+        "\\bbomb[áa]stic[oa]s?\\b"
+      ],
+      "applies_to": ["FLASH", "ALERTA", "RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "filler": {
+      "code": "filler_detected",
+      "description": "Filler / empty connectors",
+      "patterns": [
+        "\\bem\\s+meio\\s+a\\b",
+        "\\bcomo\\s+sabido\\b",
+        "\\bobviamente\\b",
+        "\\bsem\\s+d[úu]vida\\b",
+        "\\b[ée]\\s+claro\\s+que\\b",
+        "\\bvale\\s+lembrar\\b"
+      ],
+      "applies_to": ["ALERTA", "RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "first_second_person": {
+      "code": "person_violation",
+      "description": "1st or 2nd person pronouns",
+      "patterns": [
+        "\\b(eu|n[óo]s|voc[êe]|voc[êe]s)\\b",
+        "\\bnoss[oa]s?\\b",
+        "\\bme(u|us|inha|inhas)\\b",
+        "\\btu\\b",
+        "\\bte\\b"
+      ],
+      "applies_to": ["FLASH", "ALERTA", "RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "clickbait_headline": {
+      "code": "clickbait_detected",
+      "description": "Clickbait headline patterns",
+      "patterns": [
+        "\\?\\s*$",
+        "!\\s*$",
+        "\\.\\.\\.",
+        "\\bvoc[êe]\\s+n[ãa]o\\s+vai\\s+acreditar\\b",
+        "\\bo\\s+que\\s+est[áa]\\s+por\\s+tr[áa]s\\b",
+        "\\bsurpres[ao]\\b"
+      ],
+      "applies_to_field": "title"
+    },
+    "promo_cta": {
+      "code": "promo_detected",
+      "description": "Promotional / call-to-action",
+      "patterns": [
+        "\\bclique\\s+(aqui|abaixo)\\b",
+        "\\binscrev[ae]\\b",
+        "\\bcompartilh[ae]\\b",
+        "\\bsaiba\\s+mais\\b",
+        "\\blink\\s+na\\s+bio\\b",
+        "\\bsiga\\s+(o\\s+)?(canal|grupo)\\b"
+      ],
+      "applies_to": ["FLASH", "ALERTA", "RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "urgency_adjectives": {
+      "code": "urgency_in_body",
+      "description": "Urgency adjectives in body (urgency must come from priority tag)",
+      "patterns": [
+        "\\burgente\\b",
+        "\\bcr[íi]tic[oa]s?\\b",
+        "\\bgrave\\b"
+      ],
+      "applies_to": ["RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "all_caps_word": {
+      "code": "all_caps_violation",
+      "description": "ALL-CAPS words >4 chars (acronyms exempt)",
+      "pattern": "\\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{5,}\\b",
+      "acronym_whitelist": [
+        "EUA", "ONU", "OTAN", "OMC", "OMS", "FMI", "BCE", "BCB", "FED",
+        "BOJ", "BOE", "OPEP", "BRICS", "G7", "G20", "UE", "PIB",
+        "IPCA", "IGP-M", "CDI", "CDS", "ETF", "VIX", "GDP", "CPI",
+        "ISM", "PMI", "FX", "USD", "EUR", "BRL", "JPY", "CNY", "GBP",
+        "CVE", "RCE", "DDoS", "APT", "C2", "OSINT", "SOC", "MITRE",
+        "OSPF", "BGP", "TLS", "IAM", "AWS", "GCP", "MFA", "IDS", "IPS",
+        "API", "SDK", "LLM", "RAG", "GPU", "CPU", "ASIC", "TPU",
+        "ChatGPT", "OpenAI", "MSFT", "AAPL", "NVDA", "META", "TSLA"
+      ],
+      "applies_to": ["FLASH", "ALERTA", "RADAR", "BRIEFING", "FECHAMENTO"]
+    },
+    "multi_fact_bullet": {
+      "code": "multi_fact_bullet",
+      "description": "Bullet contains multiple facts (semicolon or 'e também')",
+      "patterns": [
+        ";",
+        "\\be\\s+tamb[ée]m\\b",
+        "\\bal[ée]m\\s+disso\\b"
+      ],
+      "applies_to_field": "key_points"
+    }
+  },
+  "headline_pattern": {
+    "char_min": 40,
+    "char_max": 90,
+    "required_separators": 2,
+    "separator_char": "—",
+    "must_start_with_emoji": ["🔴", "🟠", "🟡", "🔵", "🟢"],
+    "forbidden_endings": [".", "!", "?"],
+    "forbidden_chars": ["\"", "'", "…"]
+  },
+  "emoji_whitelist": {
+    "priority": ["🔴", "🟠", "🟡", "🔵", "🟢"],
+    "structural_by_template": {
+      "FLASH": [],
+      "ALERTA": [],
+      "RADAR": ["📌"],
+      "BRIEFING": ["🌐", "🔐", "🔍", "📌", "🎯"],
+      "FECHAMENTO": ["🌙", "📊", "🔥", "🌅", "📌"]
+    }
+  },
+  "redundancy": {
+    "code": "redundancy_detected",
+    "description": "Verbatim repetition across summary / key_points / impact",
+    "similarity_threshold": 0.85,
+    "applies_to_pairs": [
+      ["summary", "key_points"],
+      ["summary", "impact"],
+      ["key_points", "impact"]
+    ]
+  }
+}

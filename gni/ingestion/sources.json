@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_name": "Reuters Markets",
+      "source_type": "rss",
+      "category": "macro",
+      "url": "https://www.reuters.com/my-news/feed/",
+      "enabled": true,
+      "tier": "tier1",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "Bloomberg Markets",
+      "source_type": "rss",
+      "category": "macro",
+      "url": "https://feeds.bloomberg.com/markets/news.rss",
+      "enabled": true,
+      "tier": "tier1",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "Financial Times",
+      "source_type": "rss",
+      "category": "macro",
+      "url": "https://www.ft.com/?format=rss",
+      "enabled": true,
+      "tier": "tier1",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "CoinDesk",
+      "source_type": "rss",
+      "category": "crypto",
+      "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+      "enabled": true,
+      "tier": "tier1",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "Cointelegraph",
+      "source_type": "rss",
+      "category": "crypto",
+      "url": "https://cointelegraph.com/rss",
+      "enabled": true,
+      "tier": "tier1",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "The Block",
+      "source_type": "rss",
+      "category": "crypto",
+      "url": "https://www.theblock.co/rss.xml",
+      "enabled": true,
+      "tier": "tier2",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "Hacker News",
+      "source_type": "rss",
+      "category": "tech",
+      "url": "https://hnrss.org/frontpage",
+      "enabled": true,
+      "tier": "tier2",
+      "poll_interval_minutes": 30
+    },
+    {
+      "source_name": "Hacker News Show",
+      "source_type": "rss",
+      "category": "tech",
+      "url": "https://hnrss.org/show",
+      "enabled": false,
+      "tier": "tier3",
+      "poll_interval_minutes": 60
+    },
+    {
+      "source_name": "CNBC Finance",
+      "source_type": "rss",
+      "category": "markets",
+      "url": "${CNBC_RSS_URL_PLACEHOLDER}",
+      "enabled": false,
+      "tier": "tier2",
+      "poll_interval_minutes": 15
+    },
+    {
+      "source_name": "Bitcoinist",
+      "source_type": "rss",
+      "category": "crypto",
+      "url": "https://bitcoinist.com/feed",
+      "enabled": false,
+      "tier": "reject",
+      "poll_interval_minutes": 60
+    },
+    {
+      "source_name": "Reddit r/CryptoCurrency",
+      "source_type": "rss",
+      "category": "crypto",
+      "url": "https://www.reddit.com/r/CryptoCurrency/.rss",
+      "enabled": false,
+      "tier": "reject",
+      "poll_interval_minutes": 60
+    }
+  ]
+}

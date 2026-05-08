@@ -60,3 +60,53 @@ def select_format(
 
     # 3. Explicit fallback (documented)
     return FORMAT_MODE_RADAR_SHORT
+
+
+# ---------------------------------------------------------------------------
+# V1 content router (text -> 5-template editorial space)
+# ---------------------------------------------------------------------------
+
+URGENCY_KEYWORDS: tuple[str, ...] = (
+    "breaking", "urgente", "urgent", "guerra", "war",
+    "ataque", "attack", "crash", "hack", "breach", "exploit",
+    "killed", "morto", "morte", "dead", "explosion", "explosão",
+    "emergency", "emergência", "default", "collapse", "colapso",
+)
+HIGH_PRIORITY_KEYWORDS: tuple[str, ...] = (
+    "fed", "rate cut", "rate hike", "inflation", "inflação",
+    "gdp", "pib", "sanctions", "sanção", "sanctions",
+    "tariff", "tarifa", "downgrade", "recession", "recessão",
+    "ipca", "selic", "boe", "ecb", "bce", "fomc", "cpi",
+    "outage", "ransomware", "zero-day", "0day", "cve-",
+)
+SIGNAL_KEYWORDS: tuple[str, ...] = (
+    "rally", "surge", "plunge", "drop", "rise", "fall",
+    "alta", "queda", "sobe", "cai", "despenca", "record", "recorde",
+    "spike", "selloff", "sell-off",
+)
+
+
+def route_content(text: str) -> dict:
+    """V1 heuristic router: text -> {"template": str, "confidence": float}.
+
+    Templates returned: FLASH | ALERTA | RADAR.
+    BRIEFING and FECHAMENTO are scheduled editorial builds and are NOT
+    auto-routed from a single headline.
+
+    Confidence:
+      0.90 if urgency keyword matched      -> FLASH
+      0.80 if high-priority keyword matched -> ALERTA
+      0.70 if signal keyword matched        -> RADAR
+      0.50 fallback                          -> RADAR
+      0.00 if text is empty                  -> RADAR
+    """
+    if not text or not text.strip():
+        return {"template": "RADAR", "confidence": 0.0}
+    t = text.lower()
+    if any(k in t for k in URGENCY_KEYWORDS):
+        return {"template": "FLASH", "confidence": 0.90}
+    if any(k in t for k in HIGH_PRIORITY_KEYWORDS):
+        return {"template": "ALERTA", "confidence": 0.80}
+    if any(k in t for k in SIGNAL_KEYWORDS):
+        return {"template": "RADAR", "confidence": 0.70}
+    return {"template": "RADAR", "confidence": 0.50}

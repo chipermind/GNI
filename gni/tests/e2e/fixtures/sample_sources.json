@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_name": "TestWire Markets",
+      "source_type": "rss",
+      "url": "https://example.invalid/markets.rss",
+      "category": "markets",
+      "tier": "tier1",
+      "enabled": true
+    },
+    {
+      "source_name": "TestWire Geopolitics",
+      "source_type": "rss",
+      "url": "https://example.invalid/geo.rss",
+      "category": "geopolitics",
+      "tier": "tier1",
+      "enabled": true
+    }
+  ]
+}

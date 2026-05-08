@@ -42,3 +42,8 @@ Thumbs.db
 htmlcov/
 dist/
 build/
+
+# Development tools and artifacts
+.playwright-mcp/
+.claude/
+*.log
