@@ -3,7 +3,11 @@
 CLASSIFY_SYSTEM = """Você classifica itens de notícia em template, risk, priority, sector, flag e se requer revisão.
 Responda APENAS com JSON válido, sem markdown nem texto extra.
 Schema: {"template": string, "reason": string|null, "risk": string|null, "priority": "P0"|"P1"|"P2", "sector": string|null, "flag": string|null, "requires_review": boolean}
-template deve ser "ANALISE_INTEL" ou "FLASH_SETORIAL". reason explica brevemente a classificação."""
+template deve ser:
+- "GNI_ALERTA": evento urgente/breaking (conflito, ataque cyber, crash de mercado, ruptura geopolítica)
+- "FLASH_SETORIAL": anúncio, lançamento, parceria, setor específico
+- "ANALISE_INTEL": análise profunda, contexto estratégico, boato com impacto
+reason explica brevemente a classificação."""
 
 
 def classify_prompt(title: str, summary: str, source_name: str = "") -> str:
@@ -40,6 +44,15 @@ O objeto payload deve ter exatamente:
 - "insight": string (1 linha)"""
 
 
+GENERATE_SYSTEM_ALERTA = """Você produz um payload de publicação no template GNI_ALERTA a partir do item.
+Responda APENAS com JSON válido no formato: {"payload": { ... }}. Sem markdown, sem cercas de código.
+O objeto payload deve ter exatamente:
+- "headline": string (1 linha forte, o fato em si)
+- "o_que_aconteceu": string (1-2 linhas do que ocorreu)
+- "por_que_importa": string (1 linha de impacto estratégico)
+- "impacto_provavel": string (1 linha do efeito esperado)"""
+
+
 GENERATE_SYSTEM_DEFAULT = """Você produz um payload de publicação a partir do item.
 Responda APENAS com JSON válido: {"payload": { ... }}. Sem markdown, sem cercas de código."""
 
@@ -50,6 +63,8 @@ def get_generate_system(template: str) -> str:
         return GENERATE_SYSTEM_ANALISE
     if template == "FLASH_SETORIAL":
         return GENERATE_SYSTEM_FLASH
+    if template == "GNI_ALERTA":
+        return GENERATE_SYSTEM_ALERTA
     return GENERATE_SYSTEM_DEFAULT
 
 

@@ -66,6 +66,16 @@ class FlashSetorialPayload(BaseModel):
     insight: str = Field(..., description="1 linha")
 
 
+# --- Template GNI_ALERTA ---
+
+class GniAlertaPayload(BaseModel):
+    """Template GNI_ALERTA: short breaking-news alert."""
+    headline: str = Field(..., description="1 linha forte")
+    o_que_aconteceu: str = Field(..., description="1-2 linhas")
+    por_que_importa: str = Field(..., description="1 linha de impacto")
+    impacto_provavel: str = Field(..., description="1 linha de efeito esperado")
+
+
 # --- Generator result (wrapper) ---
 
 class GenerateResult(BaseModel):
@@ -83,6 +93,9 @@ def validate_generate_payload(payload: dict[str, Any], template: str) -> dict[st
         return m.model_dump()
     if template == "FLASH_SETORIAL":
         m = FlashSetorialPayload.model_validate(payload)
+        return m.model_dump()
+    if template == "GNI_ALERTA":
+        m = GniAlertaPayload.model_validate(payload)
         return m.model_dump()
     # DEFAULT or unknown: accept any dict (no strict schema)
     return payload

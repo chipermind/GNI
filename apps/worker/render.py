@@ -1,6 +1,7 @@
 """
-Render exact Portuguese templates: Template A (Análise de Inteligência), Template B (Flash Setorial).
-Message splitting for WhatsApp when text exceeds WHATSAPP_MAX_CHARS (default 3500).
+Render Portuguese templates for GNI Telegram desk.
+Templates: GNI_BRIEFING (📍), FLASH_INTEL (⚡), GNI_ALERTA (🚨), RADAR (🧭), FECHAMENTO (🌍).
+Message splitting for Telegram/WhatsApp.
 """
 import os
 from typing import Any, Optional
@@ -10,20 +11,36 @@ from apps.shared.env_helpers import get_int_env, parse_int
 # WhatsApp-safe: configurable max chars (default 3500)
 WHATSAPP_MAX_CHARS = get_int_env("WHATSAPP_MAX_CHARS", default=3500)
 
-HEADER_INTEL = "🚨 GNI — Análise de Inteligência"
-HEADER_FLASH_PREFIX = "🚨 GNI |"
+# Headers
+HEADER_INTEL = "📍 GNI BRIEFING"
+HEADER_FLASH_PREFIX = "⚡ FLASH INTEL |"
+HEADER_ALERTA = "🚨 GNI ALERTA"
+HEADER_RADAR = "🧭 GNI RADAR"
+HEADER_FECHAMENTO = "🌍 GNI | FECHAMENTO 24H"
+
 SEPARATOR = "⸻"
 BULLET_PREFIX = "\t• "
 CHECKLIST_PREFIX = "\t• ✅ "
 
-# Section labels (Template A)
-LABEL_TEMA = "Tema:"
-LABEL_LEITURA_RAPIDA = "Leitura rápida"
-LABEL_POR_QUE_IMPORTA = "Por que isso importa"
-LABEL_CHECKLIST_OSINT = "Como validar (checklist OSINT)"
-LABEL_INSIGHT_CENTRAL = "Insight central"
+# Priority seals: P0=🔴 Crítico, P1=🟠 Alto, P2=🟡 Monitoramento, None=🔵 Contexto
+_PRIORITY_SEALS: dict[int, str] = {0: "🔴", 1: "🟠", 2: "🟡"}
+_PRIORITY_SEAL_DEFAULT = "🔵"
 
-# Section labels (Template B)
+
+def _seal(priority: Optional[int]) -> str:
+    if priority is None:
+        return _PRIORITY_SEAL_DEFAULT
+    return _PRIORITY_SEALS.get(priority, _PRIORITY_SEAL_DEFAULT)
+
+
+# Section labels (Template A / BRIEFING)
+LABEL_TEMA = "Tema:"
+LABEL_LEITURA_RAPIDA = "Leitura GNI"
+LABEL_POR_QUE_IMPORTA = "Por que importa"
+LABEL_CHECKLIST_OSINT = "Como validar"
+LABEL_INSIGHT_CENTRAL = "Veredito GNI"
+
+# Section labels (Template B / FLASH INTEL)
 LABEL_EM_DESTAQUE = "Em destaque:"
 LABEL_INSIGHT = "📌 Insight:"
 
@@ -47,12 +64,12 @@ def _is_template_b_payload(payload: dict[str, Any]) -> bool:
     return any(payload.get(k) for k in ("setor", "linha_1", "em_destaque", "insight"))
 
 
-def render_intelligence(payload: dict[str, Any]) -> str:
+def render_intelligence(payload: dict[str, Any], priority: Optional[int] = None) -> str:
     """
-    Template A (ANALISE_INTEL): exact Portuguese layout.
-    Header, Tema:, Leitura rápida (\t•), Por que isso importa (\t•), Como validar (checklist) (\t• ✅), Insight central, separator ⸻.
+    Template ANALISE_INTEL / GNI BRIEFING: structured analysis format.
+    Header 📍 with priority seal, Tema, Leitura GNI, Por que importa, Como validar, Veredito GNI.
     """
-    parts: list[str] = [HEADER_INTEL, ""]
+    parts: list[str] = [f"{HEADER_INTEL} {_seal(priority)}", ""]
 
     if _is_template_a_payload(payload):
         # Tema
@@ -111,15 +128,14 @@ def render_intelligence(payload: dict[str, Any]) -> str:
     return "\n".join(parts).strip("\n")
 
 
-def render_sector_flash(sector: str, flag: str, payload: dict[str, Any]) -> str:
+def render_sector_flash(sector: str, flag: str, payload: dict[str, Any], priority: Optional[int] = None) -> str:
     """
-    Template B (FLASH_SETORIAL): exact Portuguese layout.
-    Header 🚨 GNI | {Setor} {flag}, Em destaque: (\t•), 📌 Insight: ..., separator ⸻.
+    Template FLASH_SETORIAL / FLASH INTEL: sector flash format.
+    Header ⚡ FLASH INTEL | {Setor} {flag} {seal}, linha_1, Em destaque, Insight.
     """
-    # Use payload setor/flag_emoji when available (from generator)
     s = payload.get("setor", sector or "").strip() or sector or "Setor"
     f = payload.get("flag_emoji", flag or "").strip() or flag or ""
-    header = f"{HEADER_FLASH_PREFIX} {s} {f}".rstrip()
+    header = f"{HEADER_FLASH_PREFIX} {s} {f} {_seal(priority)}".rstrip()
 
     parts: list[str] = [header, ""]
 
@@ -197,12 +213,74 @@ def _split_message(text: str, max_len: int) -> list[str]:
     return [part1] + _split_message(rest, max_len)
 
 
+def render_alerta(payload: dict[str, Any], priority: Optional[int] = None) -> str:
+    """
+    Template GNI_ALERTA: short breaking-news format.
+    Header 🚨 GNI ALERTA {seal}, headline, O que aconteceu, Por que importa, Impacto provável.
+    """
+    parts: list[str] = [f"{HEADER_ALERTA} {_seal(priority)}", ""]
+    headline = (payload.get("headline") or "").strip()
+    if headline:
+        parts += [headline, ""]
+    o_que = (payload.get("o_que_aconteceu") or "").strip()
+    if o_que:
+        parts += [f"O que aconteceu: {o_que}", ""]
+    por_que = (payload.get("por_que_importa") or "").strip()
+    if por_que:
+        parts += [f"Por que importa: {por_que}", ""]
+    impacto = (payload.get("impacto_provavel") or "").strip()
+    if impacto:
+        parts += [f"Impacto provável: {impacto}", ""]
+    parts.append(SEPARATOR)
+    return "\n".join(parts).strip("\n")
+
+
+def render_radar(items: list[dict[str, Any]], hour_label: str = "") -> str:
+    """
+    RADAR bulletin: aggregated list of recent items.
+    items: list of {title, source_name, priority}
+    """
+    label = f"{HEADER_RADAR} — {hour_label}" if hour_label else HEADER_RADAR
+    parts: list[str] = [label, ""]
+    for i, item in enumerate(items[:5], 1):
+        title = (item.get("title") or "")[:80].strip()
+        source = (item.get("source_name") or "").strip()
+        line = f"{i}. {title}"
+        if source:
+            line += f" ({source})"
+        parts.append(line)
+    parts += ["", SEPARATOR]
+    return "\n".join(parts).strip("\n")
+
+
+def render_fechamento(
+    items: list[dict[str, Any]],
+    signal: str = "",
+    watchlist: str = "",
+) -> str:
+    """
+    Fechamento 24H: daily close bulletin.
+    items: list of {title, source_name}
+    """
+    parts: list[str] = [HEADER_FECHAMENTO, "", "O dia em 5 pontos:"]
+    for i, item in enumerate(items[:5], 1):
+        title = (item.get("title") or "")[:80].strip()
+        parts.append(f"{i}. {title}")
+    if signal:
+        parts += ["", f"O sinal mais importante: {signal}"]
+    if watchlist:
+        parts.append(f"O que monitorar na madrugada: {watchlist}")
+    parts += ["", SEPARATOR]
+    return "\n".join(parts).strip("\n")
+
+
 def render_intelligence_messages(
     payload: dict[str, Any],
+    priority: Optional[int] = None,
     max_length: int = WHATSAPP_MAX_CHARS,
 ) -> list[str]:
-    """Template A rendered; split into list if over max_length (header in first part, form preserved)."""
-    text = render_intelligence(payload)
+    """Template ANALISE_INTEL rendered; split into list if over max_length."""
+    text = render_intelligence(payload, priority=priority)
     return _split_message(text, max_length)
 
 
@@ -210,10 +288,11 @@ def render_sector_flash_messages(
     sector: str,
     flag: str,
     payload: dict[str, Any],
+    priority: Optional[int] = None,
     max_length: int = WHATSAPP_MAX_CHARS,
 ) -> list[str]:
-    """Template B rendered; split into list if over max_length (header in first part, form preserved)."""
-    text = render_sector_flash(sector, flag, payload)
+    """Template FLASH_SETORIAL rendered; split into list if over max_length."""
+    text = render_sector_flash(sector, flag, payload, priority=priority)
     return _split_message(text, max_length)
 
 
@@ -223,17 +302,20 @@ def render(
     sector: Optional[str] = None,
     flag: Optional[str] = None,
     max_length: Optional[int] = None,
+    priority: Optional[int] = None,
 ) -> list[str]:
     """
-    Dispatch by template name (ANALISE_INTEL -> Template A, FLASH_SETORIAL -> Template B).
-    Returns list of 1 or more messages. Uses WHATSAPP_MAX_CHARS when max_length not given.
+    Dispatch by template name. Returns list of 1+ messages.
+    Templates: GNI_ALERTA, FLASH_SETORIAL, ANALISE_INTEL (default).
     """
     ml = max_length if max_length is not None else WHATSAPP_MAX_CHARS
+    if template == "GNI_ALERTA":
+        return _split_message(render_alerta(payload, priority=priority), ml)
     if template == "FLASH_SETORIAL":
         s = payload.get("setor", sector or "").strip() or sector or "Setor"
         f = payload.get("flag_emoji", flag or "").strip() or flag or ""
-        return render_sector_flash_messages(s, f, payload, max_length=ml)
-    return render_intelligence_messages(payload, max_length=ml)
+        return render_sector_flash_messages(s, f, payload, priority=priority, max_length=ml)
+    return render_intelligence_messages(payload, priority=priority, max_length=ml)
 
 
 # Backward compat alias

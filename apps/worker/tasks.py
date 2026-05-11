@@ -289,6 +289,7 @@ def _process_single_item(
             payload=payload,
             sector=sector,
             flag=flag,
+            priority=task.priority,
         )
         if not messages:
             messages = [str(payload)[:1000]]
@@ -559,6 +560,94 @@ def run_pipeline(
 
 _worker_shutdown = False
 
+# RADAR: BRT 07=UTC10, 12=UTC15, 18=UTC21, 23=UTC02
+_RADAR_UTC_HOURS = frozenset([10, 15, 21, 2])
+# Fechamento 24H: BRT 23:00 = UTC 02:00
+_FECHAMENTO_UTC_HOUR = 2
+_last_radar_utc_hour: int = -1
+_last_fechamento_utc_day: int = -1
+
+
+def step_radar(dry_run: bool = False) -> bool:
+    """Post GNI RADAR bulletin if current UTC hour matches a scheduled time. Returns True if posted."""
+    import datetime as _dt
+    global _last_radar_utc_hour
+    now = _dt.datetime.now(_dt.timezone.utc)
+    h = now.hour
+    if h not in _RADAR_UTC_HOURS:
+        return False
+    if h == _last_radar_utc_hour:
+        return False  # already sent this hour
+    init_db()
+    session = SessionLocal()
+    try:
+        since = now - _dt.timedelta(hours=6)
+        items = (
+            session.query(Item)
+            .filter(Item.status == "published", Item.updated_at >= since)
+            .order_by(Item.priority.asc(), Item.updated_at.desc())
+            .limit(5)
+            .all()
+        )
+        if not items:
+            return False
+        brt_labels = {10: "07:00", 15: "12:00", 21: "18:00", 2: "23:00"}
+        hour_label = brt_labels.get(h, f"{(h - 3) % 24:02d}:00")
+        from apps.worker.render import render_radar
+        from apps.publisher.telegram import publish_telegram
+        text = render_radar(
+            [{"title": i.title, "source_name": i.source_name, "priority": i.priority} for i in items],
+            hour_label=hour_label,
+        )
+        result = publish_telegram([text], channel="telegram_radar", dry_run=dry_run)
+        _last_radar_utc_hour = h
+        _log_info("RADAR posted", hour=hour_label, items=len(items), status=result.status)
+        return True
+    except Exception as e:
+        _log_info("RADAR error", error=str(e))
+        return False
+    finally:
+        session.close()
+
+
+def step_fechamento(dry_run: bool = False) -> bool:
+    """Post Fechamento 24H at BRT 23:00 (UTC 02:00). Returns True if posted."""
+    import datetime as _dt
+    global _last_fechamento_utc_day
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if now.hour != _FECHAMENTO_UTC_HOUR:
+        return False
+    today = now.day
+    if today == _last_fechamento_utc_day:
+        return False
+    init_db()
+    session = SessionLocal()
+    try:
+        since = now - _dt.timedelta(hours=24)
+        items = (
+            session.query(Item)
+            .filter(Item.status == "published", Item.updated_at >= since)
+            .order_by(Item.priority.asc(), Item.updated_at.desc())
+            .limit(5)
+            .all()
+        )
+        if not items:
+            return False
+        from apps.worker.render import render_fechamento
+        from apps.publisher.telegram import publish_telegram
+        text = render_fechamento(
+            [{"title": i.title, "source_name": i.source_name} for i in items],
+        )
+        result = publish_telegram([text], channel="telegram_fechamento", dry_run=dry_run)
+        _last_fechamento_utc_day = today
+        _log_info("Fechamento 24H posted", items=len(items), status=result.status)
+        return True
+    except Exception as e:
+        _log_info("Fechamento error", error=str(e))
+        return False
+    finally:
+        session.close()
+
 
 def _worker_sigterm(signum, frame):
     global _worker_shutdown
@@ -610,6 +699,15 @@ def run_scheduler() -> None:
             )
         except Exception as e:
             _log_info("Pipeline error", error=str(e))
+        # Scheduled bulletins: RADAR (07/12/18/23 BRT) and Fechamento 24H (23 BRT)
+        try:
+            step_radar(dry_run=dry_run)
+        except Exception as e:
+            _log_info("RADAR scheduler error", error=str(e))
+        try:
+            step_fechamento(dry_run=dry_run)
+        except Exception as e:
+            _log_info("Fechamento scheduler error", error=str(e))
         for _ in range(interval_sec):
             if _worker_shutdown:
                 break
