@@ -6,7 +6,7 @@ set -e
 SESSION_PATH="${TELETHON_SESSION_PATH:-/data/telethon/session}"
 SESSION_FILE="${SESSION_PATH}.session"
 
-if [ -n "$TELETHON_SESSION_B64_1" ] && [ ! -f "$SESSION_FILE" ]; then
+if [ -n "$TELETHON_SESSION_B64_1" ]; then
     echo "[entrypoint] Restoring Telethon session to $SESSION_FILE"
     mkdir -p "$(dirname "$SESSION_FILE")"
     printf '%s%s%s' "$TELETHON_SESSION_B64_1" "${TELETHON_SESSION_B64_2:-}" "${TELETHON_SESSION_B64_3:-}" \

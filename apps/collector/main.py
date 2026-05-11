@@ -15,7 +15,8 @@ _repo = Path(__file__).resolve().parent.parent.parent
 if str(_repo) not in sys.path:
     sys.path.insert(0, str(_repo))
 
-from apps.api.db import init_db
+from apps.api.db import SessionLocal, init_db
+from apps.api.db.models import Source
 from apps.collector.rss import run as run_rss_ingest
 from apps.collector.telegram_ingest import run as run_telegram_ingest
 from apps.shared.config import validate_config
@@ -42,9 +43,37 @@ def _handle_sigterm(signum, frame):
     _shutdown = True
 
 
+def _sync_telegram_sources() -> None:
+    """Sync TELEGRAM_SOURCES env var to sources table. Format: Name:chat_id,..."""
+    raw = os.environ.get("TELEGRAM_SOURCES", "").strip()
+    if not raw:
+        return
+    session = SessionLocal()
+    try:
+        for entry in raw.split(","):
+            entry = entry.strip()
+            if ":" not in entry:
+                continue
+            name, chat_id = entry.rsplit(":", 1)
+            name, chat_id = name.strip(), chat_id.strip()
+            if not name or not chat_id:
+                continue
+            existing = session.query(Source).filter(Source.chat_id == chat_id).first()
+            if not existing:
+                session.add(Source(name=name, type="telegram", chat_id=chat_id, tier=1))
+        session.commit()
+        print("[collector] Telegram sources synced from TELEGRAM_SOURCES")
+    except Exception as e:
+        session.rollback()
+        print(f"[collector] Source sync error: {e}", file=sys.stderr)
+    finally:
+        session.close()
+
+
 def run_once() -> tuple[int, int]:
     """Run RSS + Telegram ingest once. Returns (rss_count, telegram_count)."""
     init_db()
+    _sync_telegram_sources()
     rss_n = run_rss_ingest(limit=INGEST_LIMIT)
     tg_n = run_telegram_ingest(since_minutes=TELEGRAM_SINCE_MINUTES)
     return (rss_n, tg_n)
