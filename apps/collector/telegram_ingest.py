@@ -4,6 +4,7 @@ Reads sources from DB where type=telegram (use chat_id). Session from TELETHON_S
 CLI: python -m apps.collector.telegram_ingest --since-minutes 60
 """
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -74,6 +75,58 @@ def _message_to_record(entity, message, source_name: str, chat_id: str) -> dict:
     }
 
 
+async def _fetch_sources_async(
+    sources: list,
+    api_id: int,
+    api_hash: str,
+    session_path: str,
+    since: datetime,
+    limit_per_source: int,
+) -> list[dict]:
+    """Async: connect Telethon, fetch messages from all sources, return list of (rec, src_id) dicts."""
+    records = []
+    now = datetime.now(timezone.utc)
+    client = TelegramClient(session_path, api_id, api_hash)
+    async with client:
+        for src in sources:
+            chat_id = (src.chat_id or "").strip()
+            if not chat_id:
+                continue
+            try:
+                peer: object = int(chat_id)
+            except (ValueError, TypeError):
+                peer = chat_id
+            try:
+                entity = await client.get_entity(peer)
+            except Exception as e:
+                print(f"[telegram_ingest] get_entity({chat_id!r}) failed: {e}", file=sys.stderr)
+                continue
+            source_name = (src.name or getattr(entity, "title", None) or chat_id) or "telegram"
+            if hasattr(entity, "title") and entity.title and not src.name:
+                source_name = entity.title
+            try:
+                async for message in client.iter_messages(
+                    entity,
+                    offset_date=since,
+                    reverse=True,
+                    limit=limit_per_source,
+                ):
+                    if not message.text or not message.text.strip():
+                        continue
+                    rec = _message_to_record(entity, message, source_name, chat_id)
+                    rec["url"] = _message_link(client, entity, message) or ""
+                    raw_url = rec["url"] or f"telegram:{chat_id}:{message.id}"
+                    canonical_url_str = canonicalize_url(rec["url"]) if rec["url"] else raw_url
+                    norm_title = (rec["title"] or "").strip() or "(no title)"
+                    rec["fingerprint"] = build_fingerprint("telegram", canonical_url_str, norm_title)
+                    rec["_src_id"] = src.id
+                    rec["_now"] = now
+                    records.append(rec)
+            except Exception as e:
+                print(f"[telegram_ingest] iter_messages({chat_id!r}) failed: {e}", file=sys.stderr)
+    return records
+
+
 def run(since_minutes: int = 60, limit_per_source: int = 200) -> int:
     """
     Fetch Telegram sources from DB (type=telegram), get recent messages, normalize and insert.
@@ -94,83 +147,47 @@ def run(since_minutes: int = 60, limit_per_source: int = 200) -> int:
             return 0
 
         since = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+
+        records = asyncio.run(
+            _fetch_sources_async(sources, int(api_id), api_hash.strip(), session_path, since, limit_per_source)
+        )
+
         total = 0
-        now = datetime.now(timezone.utc)
+        for rec in records:
+            src_id = rec.pop("_src_id")
+            now = rec.pop("_now")
+            fingerprint = rec["fingerprint"]
 
-        client = TelegramClient(session_path, int(api_id), api_hash.strip())
-        with client:
-            for src in sources:
-                chat_id = (src.chat_id or "").strip()
-                if not chat_id:
-                    continue
-                # Parse chat_id as int for numeric IDs (e.g. -1002281264507)
-                try:
-                    peer: object = int(chat_id)
-                except (ValueError, TypeError):
-                    peer = chat_id
-                try:
-                    entity = client.get_entity(peer)
-                except Exception as e:
-                    print(f"[telegram_ingest] get_entity({chat_id!r}) failed: {e}", file=sys.stderr)
-                    continue
-                source_name = (src.name or getattr(entity, "title", None) or chat_id) or "telegram"
-                if hasattr(entity, "title") and entity.title and not src.name:
-                    source_name = entity.title
+            raw_content = json.dumps(rec.get("raw_payload") or {}, default=str)
+            raw_row = RawItem(source_id=src_id, raw_content=raw_content, fetched_at=now)
+            session.add(raw_row)
+            session.flush()
 
-                try:
-                    for message in client.iter_messages(
-                        entity,
-                        offset_date=since,
-                        reverse=True,
-                        limit=limit_per_source,
-                    ):
-                        if not message.text or not message.text.strip():
-                            continue
-                        rec = _message_to_record(entity, message, source_name, chat_id)
-                        rec["url"] = _message_link(client, entity, message) or ""
-                        raw_url = rec["url"] or f"telegram:{chat_id}:{message.id}"
-                        canonical_url_str = canonicalize_url(rec["url"]) if rec["url"] else raw_url
-                        norm_title = (rec["title"] or "").strip() or "(no title)"
-                        fingerprint = build_fingerprint("telegram", canonical_url_str, norm_title)
-                        rec["fingerprint"] = fingerprint
-
-                        raw_content = json.dumps(rec.get("raw_payload") or {}, default=str)
-                        raw_row = RawItem(
-                            source_id=src.id,
-                            raw_content=raw_content,
-                            fetched_at=now,
-                        )
-                        session.add(raw_row)
-                        session.flush()
-
-                        # Centralized dedupe: 7-day window (configurable DEDUPE_DAYS)
-                        item = find_item(session, fingerprint, title=rec.get("title"))
-                        if item:
-                            if created_at_in_window(item, DEDUPE_DAYS, now):
-                                item.updated_at = now
-                            else:
-                                item.title = rec.get("title")
-                                item.url = rec.get("url") or None
-                                item.published_at = rec.get("published_at")
-                                item.summary = rec.get("summary")
-                                item.source_name = rec["source_name"]
-                                item.source_type = "telegram"
-                                item.updated_at = now
-                        else:
-                            item = Item(
-                                fingerprint=fingerprint,
-                                title=rec.get("title"),
-                                url=rec.get("url") or None,
-                                published_at=rec.get("published_at"),
-                                summary=rec.get("summary"),
-                                source_name=rec["source_name"],
-                                source_type="telegram",
-                                status="new",
-                            )
-                            session.add(item)
-                        total += 1
-                except Exception as e:
-                    print(f"[telegram_ingest] iter_messages({chat_id!r}) failed: {e}", file=sys.stderr)
+            item = find_item(session, fingerprint, title=rec.get("title"))
+            if item:
+                if created_at_in_window(item, DEDUPE_DAYS, now):
+                    item.updated_at = now
+                else:
+                    item.title = rec.get("title")
+                    item.url = rec.get("url") or None
+                    item.published_at = rec.get("published_at")
+                    item.summary = rec.get("summary")
+                    item.source_name = rec["source_name"]
+                    item.source_type = "telegram"
+                    item.updated_at = now
+            else:
+                item = Item(
+                    fingerprint=fingerprint,
+                    title=rec.get("title"),
+                    url=rec.get("url") or None,
+                    published_at=rec.get("published_at"),
+                    summary=rec.get("summary"),
+                    source_name=rec["source_name"],
+                    source_type="telegram",
+                    status="new",
+                )
+                session.add(item)
+            total += 1
 
         session.commit()
         return total
