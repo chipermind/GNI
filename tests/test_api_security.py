@@ -1,10 +1,11 @@
 """Tests for API security: auth, rate limit, CORS."""
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 try:
-    from fastapi import Request
+    from fastapi import HTTPException, Request
     HAS_FASTAPI = True
 except ImportError:
     HAS_FASTAPI = False
@@ -34,6 +35,28 @@ def test_verify_api_key():
         assert auth._verify_api_key("my-key") is True
         assert auth._verify_api_key("wrong") is False
         assert auth._verify_api_key(None) is False
+
+
+@pytest.mark.skipif(not HAS_FASTAPI, reason="FastAPI not installed")
+def test_require_auth_fails_closed_when_unconfigured():
+    """Protected endpoints return 503 instead of becoming public when auth config is missing."""
+    from apps.api import auth
+
+    request = MagicMock(spec=Request)
+    with patch.object(auth, "JWT_SECRET", ""), patch.object(auth, "API_KEY", ""):
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(auth.require_auth(request, api_key=None, credentials=None))
+    assert exc.value.status_code == 503
+
+
+@pytest.mark.skipif(not HAS_FASTAPI, reason="FastAPI not installed")
+def test_require_auth_accepts_valid_api_key():
+    """Protected endpoints still accept the configured API key."""
+    from apps.api import auth
+
+    request = MagicMock(spec=Request)
+    with patch.object(auth, "API_KEY", "secret"), patch.object(auth, "JWT_SECRET", ""):
+        asyncio.run(auth.require_auth(request, api_key="secret", credentials=None))
 
 
 @pytest.mark.skipif(not HAS_FASTAPI, reason="FastAPI not installed")
