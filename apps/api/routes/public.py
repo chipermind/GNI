@@ -15,6 +15,13 @@ from apps.api.db.models import Item
 
 router = APIRouter(prefix="/public", tags=["public"])
 
+# Delivery state and public visibility are intentionally separate. An item may be
+# delivered to restricted channels while remaining ineligible for this surface.
+PUBLIC_SIGNAL_FILTERS = (
+    Item.status == "published",
+    Item.public_visible.is_(True),
+)
+
 
 def _safe_http_url(value: Optional[str]) -> Optional[str]:
     """Return only absolute HTTP(S) URLs; suppress internal/non-web schemes."""
@@ -35,7 +42,7 @@ def _iso(value) -> Optional[str]:
 
 
 def _serialize_signal(item: Item) -> dict:
-    """Sanitized public representation of one published intelligence item."""
+    """Sanitized public representation of one explicitly public intelligence item."""
     return {
         "id": item.id,
         "title": item.title,
@@ -56,10 +63,10 @@ def list_public_signals(
     session: Session = Depends(get_db_dependency),
     limit: int = Query(8, ge=1, le=20),
 ) -> dict:
-    """Return the latest published, sanitized intelligence signals."""
+    """Return the latest explicitly public, published intelligence signals."""
     rows = (
         session.query(Item)
-        .filter(Item.status == "published")
+        .filter(*PUBLIC_SIGNAL_FILTERS)
         .order_by(Item.updated_at.desc().nullslast(), Item.id.desc())
         .limit(limit)
         .all()
