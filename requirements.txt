@@ -8,6 +8,7 @@ uvicorn[standard]>=0.32.0,<0.33
 # DB (pinned)
 sqlalchemy>=2.0.0,<3.0
 psycopg2-binary>=2.9.0,<2.10
+psycopg[binary]>=3.2.0,<3.3
 
 # Auth
 pyjwt>=2.10.0,<2.11
