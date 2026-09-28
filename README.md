@@ -45,7 +45,7 @@ This runs `docker compose up -d`, waits until the API healthcheck passes (max 12
    curl http://127.0.0.1:8000/health
    ```
 
-3. **API security (optional)** — When `JWT_SECRET` or `API_KEY` is set, control endpoints require authentication. Use `X-API-Key` header or `Authorization: Bearer <JWT>`. When neither is set, auth is disabled (backward compatible).
+3. **API security (fail-closed)** — Control endpoints require a valid `X-API-Key` or `Authorization: Bearer <JWT>`. At least one of `API_KEY` or `JWT_SECRET` must be configured; if neither is set, protected endpoints return HTTP 503 instead of becoming public.
    ```bash
    # With API_KEY set in .env:
    curl -H "X-API-Key: $API_KEY" -X POST http://127.0.0.1:8000/control/resume
@@ -141,7 +141,7 @@ Or run `./scripts/verify_api_startup.sh` from repo root (same steps; exits 0 onl
 
 **Services:** postgres, redis, ollama, api (FastAPI, port 8000), collector (RSS + Telegram ingest), worker (scoring → LLM → publish). All use an internal Docker network, healthchecks, and `restart: unless-stopped`.
 
-**Dependencies:** Single source of truth: `requirements.txt`. API, worker, and collector install from the same file. Key libs pinned: fastapi, uvicorn, sqlalchemy, psycopg2-binary, redis, httpx, telethon, feedparser, pydantic.
+**Dependencies:** Single source of truth: `requirements.txt`. API, worker, and collector install from the same file. Key libs pinned: fastapi, uvicorn, sqlalchemy, psycopg2-binary, psycopg 3, redis, httpx, telethon, feedparser, pydantic.
 
 **Docker security:** Containers run as root. For production hardening, add a non-root user in Dockerfiles; bind mounts (e.g. `./data/telethon`) may need `chown` to match container uid.
 
@@ -307,7 +307,7 @@ The script:
 
 If Telegram or Make is not configured, the script prints which env vars are missing and exits non-zero. On success, it prints **ALL CHECKS PASSED**.
 
-When `API_KEY` is set (e.g. in `.env`), the script passes it to control endpoints. Without `API_KEY`, auth is disabled and no header is sent.
+When `API_KEY` is set (e.g. in `.env`), the script passes it to control endpoints. If the deployment uses JWT-only auth, provide a valid bearer token for protected calls. With neither `API_KEY` nor `JWT_SECRET` configured, protected endpoints fail closed with HTTP 503.
 
 ### Webhook Verification (Make)
 
