@@ -40,19 +40,19 @@ def list_posts(
 ) -> dict[str, Any]:
     """List posts. status=pending: drafted items (needs_review or all). status=published: items with status=published."""
     if status == "pending":
+        query = session.query(Item).filter(Item.status == "drafted")
+        total = query.count()
         rows = (
-            session.query(Item)
-            .filter(Item.status == "drafted")
-            .order_by(Item.id.desc())
+            query.order_by(Item.id.desc())
             .offset(offset)
             .limit(limit)
             .all()
         )
     else:
+        query = session.query(Item).filter(Item.status == "published")
+        total = query.count()
         rows = (
-            session.query(Item)
-            .filter(Item.status == "published")
-            .order_by(Item.updated_at.desc().nullslast(), Item.id.desc())
+            query.order_by(Item.updated_at.desc().nullslast(), Item.id.desc())
             .offset(offset)
             .limit(limit)
             .all()
