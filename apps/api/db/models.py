@@ -52,6 +52,7 @@ class Item(Base):
         Index("ix_items_fingerprint_created_at", "fingerprint", "created_at"),
         Index("ix_items_source_type_created_at", "source_type", "created_at"),
         Index("ix_items_status_id", "status", "id"),
+        Index("ix_items_public_visible_status_updated_at", "public_visible", "status", "updated_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -66,6 +67,7 @@ class Item(Base):
     priority: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     template: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    public_visible: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="new", index=True)  # new | scored | drafted | published | failed | dlq
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)

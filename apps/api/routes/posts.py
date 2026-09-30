@@ -1,7 +1,7 @@
 """Posts: drafted (pending) and published items for Streamlit Posts page."""
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -40,19 +40,19 @@ def list_posts(
 ) -> dict[str, Any]:
     """List posts. status=pending: drafted items (needs_review or all). status=published: items with status=published."""
     if status == "pending":
+        query = session.query(Item).filter(Item.status == "drafted")
+        total = query.count()
         rows = (
-            session.query(Item)
-            .filter(Item.status == "drafted")
-            .order_by(Item.id.desc())
+            query.order_by(Item.id.desc())
             .offset(offset)
             .limit(limit)
             .all()
         )
     else:
+        query = session.query(Item).filter(Item.status == "published")
+        total = query.count()
         rows = (
-            session.query(Item)
-            .filter(Item.status == "published")
-            .order_by(Item.updated_at.desc().nullslast(), Item.id.desc())
+            query.order_by(Item.updated_at.desc().nullslast(), Item.id.desc())
             .offset(offset)
             .limit(limit)
             .all()
@@ -82,9 +82,35 @@ def list_posts(
             "source_name": r.source_name,
             "status": r.status,
             "needs_review": r.needs_review,
+            "public_visible": bool(r.public_visible),
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             "rendered_text": rendered,
             "draft_payload": payload,
         })
     return {"items": out, "total": total, "limit": limit, "offset": offset}
+
+
+@router.post("/{item_id}/public-visibility")
+def set_public_visibility(
+    item_id: int,
+    visible: bool = Query(..., description="Whether the item may appear on public GNI surfaces"),
+    session: Session = Depends(get_db_dependency),
+) -> dict[str, Any]:
+    """Explicitly control public eligibility for a published item.
+
+    This router is mounted behind require_auth in apps.api.main. Setting visible=true
+    is allowed only after the delivery lifecycle reached status=published. Revoking
+    visibility is always allowed.
+    """
+    row = session.query(Item).filter(Item.id == item_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="item not found")
+    if visible and row.status != "published":
+        raise HTTPException(
+            status_code=409,
+            detail=f"item status is {row.status}; only published items can be public",
+        )
+    row.public_visible = visible
+    session.commit()
+    return {"id": row.id, "status": row.status, "public_visible": bool(row.public_visible)}

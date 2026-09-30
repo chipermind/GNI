@@ -15,6 +15,7 @@ from apps.api.routes.health import router as health_router
 from apps.api.routes.metrics import router as metrics_router
 from apps.api.routes.monitoring import router as monitoring_router
 from apps.api.routes.posts import router as posts_router
+from apps.api.routes.public import router as public_router
 from apps.api.routes.review import router as review_router
 from apps.api.routes.sources import router as sources_router
 from apps.api.routes.wa_bridge import router as wa_bridge_router
@@ -99,6 +100,7 @@ app.include_router(auth_router)
 app.include_router(control_router, dependencies=[Depends(require_auth)])
 app.include_router(dlq_router, dependencies=[Depends(require_auth)])
 app.include_router(monitoring_router, dependencies=[Depends(require_auth)])
+app.include_router(public_router)
 app.include_router(posts_router, dependencies=[Depends(require_auth)])
 app.include_router(sources_router, dependencies=[Depends(require_auth)])
 app.include_router(review_router, dependencies=[Depends(require_auth)])

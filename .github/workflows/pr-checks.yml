@@ -42,6 +42,11 @@ jobs:
         run: |
           python -m py_compile apps/api/auth.py
           python -m py_compile apps/api/main.py
+          python -m py_compile apps/api/db/models.py
+          python -m py_compile apps/api/routes/posts.py
+          if [ -f alembic/versions/005_public_visibility.py ]; then
+            python -m py_compile alembic/versions/005_public_visibility.py
+          fi
           if [ -f apps/api/routes/public.py ]; then
             python -m py_compile apps/api/routes/public.py
           fi
