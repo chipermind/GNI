@@ -1,6 +1,6 @@
 """
 JWT + API key authentication for control/admin endpoints.
-When neither JWT_SECRET nor API_KEY is set, auth is disabled (backward compat).
+Protected endpoints fail closed when neither JWT_SECRET nor API_KEY is configured.
 Uses API settings (Pydantic); JWT_EXPIRY_SECONDS is always int, never raw string.
 """
 from typing import Optional
@@ -26,7 +26,7 @@ http_bearer = HTTPBearer(auto_error=False)
 
 
 def auth_required() -> bool:
-    """True if any auth is configured (JWT or API key)."""
+    """True if any auth mechanism is configured."""
     return bool(JWT_SECRET or API_KEY)
 
 
@@ -52,18 +52,24 @@ async def require_auth(
     credentials: Optional[HTTPAuthorizationCredentials] = Security(http_bearer),
 ) -> None:
     """
-    Dependency: require valid API key or JWT Bearer token for control endpoints.
-    When auth is disabled (no JWT_SECRET, no API_KEY), passes without check.
+    Require a valid API key or JWT Bearer token for protected endpoints.
+
+    Fail closed when neither JWT_SECRET nor API_KEY is configured. Public
+    endpoints must be mounted without this dependency instead of relying on
+    missing credentials to disable authentication.
     """
     if not auth_required():
-        return
+        raise HTTPException(
+            status_code=503,
+            detail="API authentication is not configured",
+        )
     if api_key and _verify_api_key(api_key):
         return
     if credentials and credentials.credentials and _verify_jwt(credentials.credentials):
         return
     raise HTTPException(
         status_code=401,
-        detail="Unauthorized: missing or invalid X-API-Key header or Bearer token"
+        detail="Unauthorized: missing or invalid X-API-Key header or Bearer token",
     )
 
 
